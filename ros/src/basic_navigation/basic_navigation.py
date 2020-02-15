@@ -1,12 +1,9 @@
-#! /usr/bin/env python
-
 from __future__ import print_function
 
 import tf
 import copy
 import math
 import rospy
-import traceback
 from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PoseStamped, PointStamped
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
@@ -14,7 +11,7 @@ from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from navfn.srv import MakeNavPlan, MakeNavPlanRequest, MakeNavPlanResponse
 
-from basic_navigation.utils import Utils
+from utils import Utils
 
 class BasicNavigation(object):
 
@@ -339,16 +336,3 @@ class BasicNavigation(object):
     def publish_nav_feedback(self, status):
         self._nav_feedback_pub.publish(ManeuverNavFeedback(status=status))
 
-if __name__ == "__main__":
-    rospy.init_node('basic_navigation')
-    BN = BasicNavigation()
-    CONTROL_RATE = rospy.get_param('~control_rate', 1.0)
-    RATE = rospy.Rate(CONTROL_RATE)
-    try:
-        while not rospy.is_shutdown():
-            BN.run_once()
-            RATE.sleep()
-    except Exception as e:
-        rospy.logerr(str(e))
-        traceback.print_exc()
-    rospy.loginfo('Exiting.')
