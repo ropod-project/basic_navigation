@@ -13,9 +13,13 @@
         <remap from="~bn_feedback" to="/route_navigation/feedback" />
         <remap from="~cancel_bn" to="/basic_navigation/cancel" />
         <remap from="~bn_goal" to="/move_base_simple/goal" />
+        <remap from="~bn_goal_path" to="/basic_navigation/goal_path" />
 
         <rosparam command="load" file="$(find osm_bridge_ros_wrapper)/ros/config/$(arg building).yaml"/>
         <param name="floor" type="int" value="0" />
+        <param name="wp_goal_tolerance" type="double" value="1.5"/>
+        <param name="dist_between_wp" type="double" value="1.0"/>
+        <param name="global_planner_service" type="string" value="/global_planner/make_plan"/>
     </node>
 
 </launch>

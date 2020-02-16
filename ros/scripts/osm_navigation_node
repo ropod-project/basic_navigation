@@ -13,6 +13,7 @@ from nav_msgs.msg import Path
 from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from basic_navigation.utils import Utils
+from basic_navigation.global_planner_utils import GlobalPlannerUtils
 
 class OSMNavigation(object):
 
@@ -35,9 +36,11 @@ class OSMNavigation(object):
         # ROS params
         self.global_frame = rospy.get_param('~global_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
+        self.wp_goal_tolerance = rospy.get_param('~wp_goal_tolerance', 1.0)
 
         # class variables
         self.tf_listener = tf.TransformListener()
+        self.global_planner_utils = GlobalPlannerUtils()
         self.path = None
         self.goal = None
         self.bn_reached_curr_wp = None
@@ -52,6 +55,7 @@ class OSMNavigation(object):
         self._path_pub = rospy.Publisher('~path', Path, queue_size=1)
         self._cancel_bn_pub = rospy.Publisher('~cancel_bn', Empty, queue_size=1)
         self._bn_wp_pub = rospy.Publisher('~bn_goal', PoseStamped, queue_size=1)
+        self._bn_path_pub = rospy.Publisher('~bn_goal_path', Path, queue_size=1)
 
         rospy.loginfo('Initialised')
 
@@ -65,9 +69,7 @@ class OSMNavigation(object):
         if self.goal is not None and self.path is None:
             try:
                 self._get_osm_path(self.goal)
-                self._bn_wp_pub.publish(self.path[0])
-                rospy.loginfo('Sent new WP')
-                self.bn_reached_curr_wp = False
+                self.create_plan_and_send()
             except Exception as e:
                 rospy.logerr('Caught following Exception\n\n')
                 traceback.print_exc()
@@ -75,20 +77,20 @@ class OSMNavigation(object):
                 self._reset_state()
 
         if self.bn_reached_curr_wp:
-            self.path.pop(0)
+            old_wp = self.path.pop(0)
             if len(self.path) == 0:
                 rospy.loginfo('\n\nREACHED GOAL\n\n')
                 self._reset_state()
                 return
-            self._bn_wp_pub.publish(self.path[0])
-            rospy.loginfo('Sent new wp to Basic Navigation')
-            self.bn_reached_curr_wp = False
+            self.create_plan_and_send(old_wp)
 
     def bn_feedback_cb(self, msg):
+        if self.path is None:
+            return
         if msg.status == ManeuverNavFeedback.SUCCESS:
             self.bn_reached_curr_wp = True
         elif msg.status == ManeuverNavFeedback.BUSY:
-            if msg.dist_to_obs < 1.0 and len(self.path) > 1:
+            if msg.dist_to_obs < self.wp_goal_tolerance and len(self.path) > 1:
                 self.bn_reached_curr_wp = True
         elif msg.status >= ManeuverNavFeedback.FAILURE_OBSTACLES: # any type of failure
             self._reset_state()
@@ -100,6 +102,26 @@ class OSMNavigation(object):
             self.path = None
             rospy.logwarn('Preempting previous goal. User requested another goal')
 
+    def create_plan_and_send(self, old_wp=None):
+        if old_wp is None:
+            start_pos = self.get_current_position_from_tf()
+        else:
+            start_pos = Utils.get_x_y_theta_from_pose(old_wp.pose)
+        if start_pos is not None:
+            new_wp = Utils.get_x_y_theta_from_pose(self.path[0].pose)
+            global_planner_path = self.global_planner_utils.get_global_plan(start_pos, new_wp)
+            if global_planner_path is not None:
+                path_msg = Path(poses=global_planner_path)
+                path_msg.header.stamp = rospy.Time.now()
+                path_msg.header.frame_id = self.global_frame
+                self._bn_path_pub.publish(path_msg)
+                rospy.loginfo('Sent new path')
+                self.bn_reached_curr_wp = False
+                return
+        self._bn_wp_pub.publish(self.path[0])
+        rospy.loginfo('Sent new WP')
+        self.bn_reached_curr_wp = False
+
     def cancel_current_goal(self, msg):
         """Cancel current goal by sending a cancel signal to basic navigation
 
@@ -107,15 +129,28 @@ class OSMNavigation(object):
         :returns: None
 
         """
+        rospy.logwarn('Preempting')
         self._reset_state()
 
     def _reset_state(self):
-        self._cancel_bn_pub.publish(Empty())
-        rospy.sleep(0.5)
         self.goal = None
         self.path = None
         self.bn_reached_curr_wp = False
+        self._cancel_bn_pub.publish(Empty())
+        rospy.sleep(0.5)
         
+    def get_current_position_from_tf(self):
+        try:
+            trans, rot = self.tf_listener.lookupTransform(self.global_frame,
+                                                          self.robot_frame,
+                                                          rospy.Time(0))
+            _, _, yaw = tf.transformations.euler_from_quaternion(rot)
+            curr_pos = (trans[0], trans[1], yaw)
+        except Exception as e:
+            rospy.logerr(str(e))
+            curr_pos = None
+        return curr_pos
+
     def _get_osm_path(self, dest_local_area):
         """
         Tries to get a osm path from current location to `dest_local_area`
@@ -126,10 +161,10 @@ class OSMNavigation(object):
         :returns: None
 
         """
-        trans, _ = self.tf_listener.lookupTransform(self.global_frame,
-                                                    self.robot_frame,
-                                                    rospy.Time(0))
-        x, y = trans[0], trans[1]
+        curr_pos = self.get_current_position_from_tf()
+        if curr_pos is None:
+            return None
+        x, y, _ = curr_pos
         rospy.loginfo('Current pos: ' + str((x, y)))
 
         current_floor = rospy.get_param('~floor', 0)
@@ -183,11 +218,10 @@ class OSMNavigation(object):
             self.path.pop(0) # remove current area's wp
         rospy.loginfo('Planned path successfully')
 
-
 if __name__ == "__main__":
     rospy.init_node('osm_navigation')
     OSMN = OSMNavigation()
-    CONTROL_RATE = rospy.get_param('~control_rate', 0.5)
+    CONTROL_RATE = rospy.get_param('~control_rate', 1.0)
     RATE = rospy.Rate(CONTROL_RATE)
     rospy.on_shutdown(OSMN._reset_state)
     try:

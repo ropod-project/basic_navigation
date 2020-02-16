@@ -16,7 +16,8 @@ goal_dist_tolerance: 0.1
 goal_theta_tolerance: 0.1
 latch_xy_goal: True
 dist_between_wp: 1.0
-waypoint_dist_tolerance: 0.3
+waypoint_goal_tolerance: 0.3
+goal_path_start_point_tolerance: 1.0
 max_safe_costmap_val: 80
 
 # controller params

@@ -10,9 +10,8 @@ from geometry_msgs.msg import PoseStamped, PointStamped
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
-from navfn.srv import MakeNavPlan, MakeNavPlanRequest, MakeNavPlanResponse
-
 from utils import Utils
+from global_planner_utils import GlobalPlannerUtils
 
 class BasicNavigation(object):
 
@@ -37,8 +36,8 @@ class BasicNavigation(object):
         self.goal_dist_tolerance = rospy.get_param('~goal_dist_tolerance', 0.1)
         self.goal_theta_tolerance = rospy.get_param('~goal_theta_tolerance', 0.1)
         self.latch_xy_goal = rospy.get_param('~latch_xy_goal', True)
-        self.dist_between_wp = rospy.get_param('~dist_between_wp', 1.0)
-        self.waypoint_dist_tolerance = rospy.get_param('~waypoint_dist_tolerance', 0.3)
+        self.waypoint_goal_tolerance = rospy.get_param('~waypoint_goal_tolerance', 0.3)
+        self.goal_path_start_point_tolerance = rospy.get_param('~goal_path_start_point_tolerance', 1.0)
         max_safe_costmap_val = rospy.get_param('~max_safe_costmap_val', 80)
 
         # controller params
@@ -75,16 +74,12 @@ class BasicNavigation(object):
         # Subscribers
         costmap_sub = rospy.Subscriber('~costmap', OccupancyGrid, self.costmap_cb)
         goal_sub = rospy.Subscriber('~goal', PoseStamped, self.goal_cb)
+        path_sub = rospy.Subscriber('~goal_path', Path, self.path_cb)
         cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
-        # localisation_sub = rospy.Subscriber('~localisation', PoseWithCovarianceStamped, self.localisation_cb)
 
-        # Service client
+        # Global planner
         if self.use_global_planner:
-            global_planner_service_topic = rospy.get_param('~global_planner_service', 'make_plan')
-            rospy.loginfo('Waiting for global planner')
-            rospy.wait_for_service(global_planner_service_topic)
-            rospy.loginfo('Wait complete.')
-            self.call_global_planner = rospy.ServiceProxy(global_planner_service_topic, MakeNavPlan)
+            self.global_planner_utils = GlobalPlannerUtils()
 
         rospy.sleep(0.5)
         rospy.loginfo('Initialised')
@@ -125,9 +120,9 @@ class BasicNavigation(object):
             else:
                 self._rotate_in_place(theta_error=angular_dist)
                 return
-        if dist < self.waypoint_dist_tolerance and len(self.plan) > 1:
+        if dist < self.waypoint_goal_tolerance and len(self.plan) > 1:
             rospy.loginfo('Reached waypoint')
-            self.plan.pop(0)
+            old_wp = self.plan.pop(0)
             self.publish_nav_feedback(ManeuverNavFeedback.BUSY)
 
         heading = math.atan2(curr_goal[1]-self.curr_pos[1], curr_goal[0]-self.curr_pos[0])
@@ -206,9 +201,33 @@ class BasicNavigation(object):
             self.plan = None
             rospy.logwarn('Preempting previous goal. User requested another goal')
 
-    # def localisation_cb(self, msg):
-    #     self.curr_pos = Utils.get_x_y_theta_from_pose(msg.pose.pose)
-    #     print(self.curr_pos)
+    def path_cb(self, msg):
+        # sanity checks
+        if self.global_frame != msg.header.frame_id:
+            rospy.logwarn('Goal path has "' + msg.header.frame_id + '" frame. '\
+                          + 'Expecting "' + self.global_frame + '". Ignoring.')
+            return
+        path = msg.poses
+        if len(path) == 0:
+            rospy.logwarn('Received empty goal path. Ignoring')
+            return
+        first_pose = Utils.get_x_y_theta_from_pose(path[0].pose)
+        dist = Utils.get_distance_between_points(first_pose[:2], self.curr_pos[:2])
+        if dist > self.goal_path_start_point_tolerance:
+            rospy.logwarn('Goal path first point is too far from robot. Ignoring.')
+            return
+
+        dist_between_wp = rospy.get_param('~dist_between_wp', None)
+        if len(path) > 1 and dist_between_wp is not None:
+            second_pose = Utils.get_x_y_theta_from_pose(path[1].pose)
+            avg_dist = Utils.get_distance_between_points(first_pose[:2], second_pose[:2])
+            if abs(avg_dist - dist_between_wp) > 0.5:
+                rospy.logwarn('Distance between waypoints is ' + str(avg_dist) \
+                              + ' Expecting value around ' + str(dist_between_wp) + '. Ignoring.')
+                return
+        self.plan = path
+        self.goal = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
+        self._path_pub.publish(msg)
 
     def costmap_cb(self, msg):
         self.costmap_msg = msg
@@ -230,38 +249,13 @@ class BasicNavigation(object):
         :returns: None
 
         """
-        plan = []
-        req = MakeNavPlanRequest()
-        req.goal = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-                                                               *self.goal)
-        req.start = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-                                                                *self.curr_pos)
-        try:
-            response = self.call_global_planner(req)
-            if len(response.path) > 0:
-                plan = response.path
-            else:
-                rospy.logerr('Global planner failed.')
-                rospy.logerr('ABORTING')
-                self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
-                self._reset_state()
-                return
-        except rospy.ServiceException as e:
+        self.plan = self.global_planner_utils.get_global_plan(self.curr_pos, self.goal)
+        if self.plan is None:
             rospy.logerr('Global planner failed.')
-            rospy.logerr(str(e))
             rospy.logerr('ABORTING')
             self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
             self._reset_state()
             return
-
-        first_pose = Utils.get_x_y_theta_from_pose(plan[0].pose)
-        second_pose = Utils.get_x_y_theta_from_pose(plan[1].pose)
-        avg_dist = Utils.get_distance_between_points(first_pose[:2], second_pose[:2])
-        index_offset = int(round(self.dist_between_wp/avg_dist))
-        self.plan = []
-        for i in range(0, len(plan), index_offset):
-            self.plan.append(plan[i])
-        self.plan.append(plan[-1])
 
         # publish path
         path_msg = Path()
@@ -335,8 +329,7 @@ class BasicNavigation(object):
 
     def cancel_current_goal(self, msg):
         rospy.logwarn('PREEMPTING (cancelled goal)')
-        # TODO should send a preempted feedback
-        # self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
+        self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
         self._reset_state()
 
     def publish_zero_vel(self):
