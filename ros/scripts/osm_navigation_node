@@ -1,0 +1,128 @@
+#! /usr/bin/env python
+
+import tf
+import math
+import rospy
+import traceback
+from OBL import OSMBridge, PathPlanner
+from std_msgs.msg import String
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from nav_msgs.msg import Path
+
+from basic_navigation.utils import Utils
+
+class OSMNavigation(object):
+
+    """Navigation using OSM map"""
+
+    def __init__(self):
+        # OSM related ros params and variables
+        ref_latitude = rospy.get_param('~ref_latitude', None)
+        ref_longitude = rospy.get_param('~ref_longitude', None)
+        if ref_latitude is None or ref_longitude is None:
+            rospy.logfatal('Reference global origin not provided. Exiting.')
+            sys.exit(1)
+        self.osm_bridge = OSMBridge(global_origin=[ref_latitude, ref_longitude])
+
+        building = rospy.get_param('~building', 'BRSU')
+        self.floor_prefix = building + '_L'
+        self.path_planner = PathPlanner(self.osm_bridge)
+        self.path_planner.set_building(building)
+
+        # ROS params
+        self.global_frame = rospy.get_param('~global_frame', 'map')
+        self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
+
+        # class variables
+        self.tf_listener = tf.TransformListener()
+
+        # subscribers
+        goal_sub = rospy.Subscriber('~goal', String, self.goal_cb)
+
+        # publishers
+        self._path_pub = rospy.Publisher('~path', Path, queue_size=1)
+
+        rospy.loginfo('Initialised')
+        
+    def goal_cb(self, msg):
+        """
+        Tries to create a plan using OSM path planner from current position to goal
+
+        :msg: std_msgs.String
+        :returns: None
+
+        """
+        try:
+            path = self._get_osm_path(msg.data)
+        except Exception as e:
+            rospy.logerr('Caught following Exception\n\n')
+            # rospy.logerr(str(e))
+            traceback.print_exc()
+            rospy.logerr('Ignoring goal\n')
+
+    def _get_osm_path(self, dest_local_area):
+        """
+        Tries to get a osm path from current location to `dest_local_area`
+        `dest_local_area` can be either a string or an int written as string
+        e.g.  "BRSU_C_L0_C7_LA1" or "66"
+
+        :dest_local_area: string or int
+        :returns: TODO
+
+        """
+        trans, rot = self.tf_listener.lookupTransform(self.global_frame, self.robot_frame, rospy.Time(0))
+        x, y = trans[0], trans[1]
+        rospy.loginfo('Current pos: ' + str((x, y)))
+
+        current_floor = rospy.get_param('~floor', 0)
+        start_floor = self.floor_prefix + str(current_floor)
+        start_local_area_obj = self.osm_bridge.get_local_area(x=x, y=y,
+                                                              floor_name=start_floor,
+                                                              isLatlong=False)
+        try:
+            dest_local_area = int(dest_local_area)
+        except ValueError:
+            pass
+
+        dest_local_area_obj = self.osm_bridge.get_local_area(dest_local_area)
+        dest_local_area_obj.geometry
+        dest_area = dest_local_area_obj.parent_id
+        dest_floor = self.floor_prefix + str(dest_local_area_obj.level)
+
+        rospy.loginfo('Trying to plan a path from ' + str(start_local_area_obj.ref) \
+                        + ' to ' + str(dest_local_area_obj.ref))
+        path = self.path_planner.get_path_plan(start_floor=start_floor,
+                                               destination_floor=dest_floor,
+                                               start_area=start_local_area_obj.parent_id,
+                                               destination_area=dest_area,
+                                               start_local_area=start_local_area_obj.id,
+                                               destination_local_area=dest_local_area)
+
+        path_msg = Path()
+        path_msg.header.frame_id = self.global_frame
+        path_msg.header.stamp = rospy.Time.now()
+
+        pos_path = [(p.navigation_areas[0].topology.x,
+                     p.navigation_areas[0].topology.y) for p in path]
+        pos_path.insert(0, (x, y)) # insert current position
+
+        theta = 0.0
+        for i in range(len(pos_path)):
+            if i < len(pos_path)-1:
+                theta = math.atan2(pos_path[i+1][1] - pos_path[i][1],
+                                   pos_path[i+1][0] - pos_path[i][0])
+            pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
+                                                               pos_path[i][0],
+                                                               pos_path[i][1],
+                                                               theta)
+            path_msg.poses.append(pose)
+
+        self._path_pub.publish(path_msg)
+        rospy.loginfo('Planned path successfully')
+
+
+if __name__ == "__main__":
+    rospy.init_node('osm_navigation')
+    OSMN = OSMNavigation()
+    rospy.spin()
+    rospy.loginfo('Exiting.')

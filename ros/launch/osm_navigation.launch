@@ -1,0 +1,18 @@
+<?xml version='1.0'?>
+<launch>
+
+    <arg name="building" default="BRSU"/>
+
+    <!-- <include file="$(find osm_bridge_ros_wrapper)/ros/launch/osm_bridge.launch"> -->
+    <!--     <arg name="building" value="BRSU"/> -->
+    <!-- </include> -->
+
+    <node pkg="basic_navigation" type="osm_navigation_node" name="osm_navigation"
+          respawn="false" output="screen">
+        <remap from="~localisation_topic" to="/amcl_pose" />
+
+        <rosparam command="load" file="$(find osm_bridge_ros_wrapper)/ros/config/$(arg building).yaml"/>
+        <param name="floor" type="int" value="0" />
+    </node>
+
+</launch>
