@@ -26,6 +26,6 @@ p_theta: 1.0
 p_linear: 1.0
 max_theta_vel: 0.5
 min_theta_vel: 0.005
-max_linear_vel: 0.3
+max_linear_vel: 0.5
 min_linear_vel: 0.1
 future_pos_lookahead_dist: 0.4

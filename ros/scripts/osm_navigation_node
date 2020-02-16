@@ -1,13 +1,16 @@
 #! /usr/bin/env python
 
 import tf
+import time
 import math
 import rospy
 import traceback
 from OBL import OSMBridge, PathPlanner
-from std_msgs.msg import String
-from geometry_msgs.msg import PoseWithCovarianceStamped
+
+from std_msgs.msg import String, Empty
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from basic_navigation.utils import Utils
 
@@ -35,31 +38,84 @@ class OSMNavigation(object):
 
         # class variables
         self.tf_listener = tf.TransformListener()
+        self.path = None
+        self.goal = None
+        self.bn_reached_curr_wp = None
 
         # subscribers
         goal_sub = rospy.Subscriber('~goal', String, self.goal_cb)
+        cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
+        bn_feedback_sub = rospy.Subscriber('~bn_feedback', ManeuverNavFeedback,
+                                           self.bn_feedback_cb)
 
         # publishers
         self._path_pub = rospy.Publisher('~path', Path, queue_size=1)
+        self._cancel_bn_pub = rospy.Publisher('~cancel_bn', Empty, queue_size=1)
+        self._bn_wp_pub = rospy.Publisher('~bn_goal', PoseStamped, queue_size=1)
 
         rospy.loginfo('Initialised')
-        
-    def goal_cb(self, msg):
-        """
-        Tries to create a plan using OSM path planner from current position to goal
 
-        :msg: std_msgs.String
+    def run_once(self):
+        """
+        Main control loop
+        """
+        if self.goal is None:
+            return
+
+        if self.goal is not None and self.path is None:
+            try:
+                self._get_osm_path(self.goal)
+                self._bn_wp_pub.publish(self.path[0])
+                rospy.loginfo('Sent new WP')
+                self.bn_reached_curr_wp = False
+            except Exception as e:
+                rospy.logerr('Caught following Exception\n\n')
+                traceback.print_exc()
+                rospy.logerr('Ignoring goal\n')
+                self._reset_state()
+
+        if self.bn_reached_curr_wp:
+            self.path.pop(0)
+            if len(self.path) == 0:
+                rospy.loginfo('\n\nREACHED GOAL\n\n')
+                self._reset_state()
+                return
+            self._bn_wp_pub.publish(self.path[0])
+            rospy.loginfo('Sent new wp to Basic Navigation')
+            self.bn_reached_curr_wp = False
+
+    def bn_feedback_cb(self, msg):
+        if msg.status == ManeuverNavFeedback.SUCCESS:
+            self.bn_reached_curr_wp = True
+        elif msg.status == ManeuverNavFeedback.BUSY:
+            if msg.dist_to_obs < 1.0 and len(self.path) > 1:
+                self.bn_reached_curr_wp = True
+        elif msg.status >= ManeuverNavFeedback.FAILURE_OBSTACLES: # any type of failure
+            self._reset_state()
+
+    def goal_cb(self, msg):
+        self.goal = msg.data
+        rospy.loginfo('Received new goal')
+        if self.path is not None:
+            self.path = None
+            rospy.logwarn('Preempting previous goal. User requested another goal')
+
+    def cancel_current_goal(self, msg):
+        """Cancel current goal by sending a cancel signal to basic navigation
+
+        :msg: std_msgs.Empty
         :returns: None
 
         """
-        try:
-            path = self._get_osm_path(msg.data)
-        except Exception as e:
-            rospy.logerr('Caught following Exception\n\n')
-            # rospy.logerr(str(e))
-            traceback.print_exc()
-            rospy.logerr('Ignoring goal\n')
+        self._reset_state()
 
+    def _reset_state(self):
+        self._cancel_bn_pub.publish(Empty())
+        rospy.sleep(0.5)
+        self.goal = None
+        self.path = None
+        self.bn_reached_curr_wp = False
+        
     def _get_osm_path(self, dest_local_area):
         """
         Tries to get a osm path from current location to `dest_local_area`
@@ -67,10 +123,12 @@ class OSMNavigation(object):
         e.g.  "BRSU_C_L0_C7_LA1" or "66"
 
         :dest_local_area: string or int
-        :returns: TODO
+        :returns: None
 
         """
-        trans, rot = self.tf_listener.lookupTransform(self.global_frame, self.robot_frame, rospy.Time(0))
+        trans, _ = self.tf_listener.lookupTransform(self.global_frame,
+                                                    self.robot_frame,
+                                                    rospy.Time(0))
         x, y = trans[0], trans[1]
         rospy.loginfo('Current pos: ' + str((x, y)))
 
@@ -91,38 +149,53 @@ class OSMNavigation(object):
 
         rospy.loginfo('Trying to plan a path from ' + str(start_local_area_obj.ref) \
                         + ' to ' + str(dest_local_area_obj.ref))
-        path = self.path_planner.get_path_plan(start_floor=start_floor,
-                                               destination_floor=dest_floor,
-                                               start_area=start_local_area_obj.parent_id,
-                                               destination_area=dest_area,
-                                               start_local_area=start_local_area_obj.id,
-                                               destination_local_area=dest_local_area)
+        osm_path = self.path_planner.get_path_plan(start_floor=start_floor,
+                                                   destination_floor=dest_floor,
+                                                   start_area=start_local_area_obj.parent_id,
+                                                   destination_area=dest_area,
+                                                   start_local_area=start_local_area_obj.id,
+                                                   destination_local_area=dest_local_area)
 
         path_msg = Path()
         path_msg.header.frame_id = self.global_frame
         path_msg.header.stamp = rospy.Time.now()
 
-        pos_path = [(p.navigation_areas[0].topology.x,
-                     p.navigation_areas[0].topology.y) for p in path]
-        pos_path.insert(0, (x, y)) # insert current position
+        pos_path = [[p.navigation_areas[0].topology.x,
+                     p.navigation_areas[0].topology.y] for p in osm_path]
+        pos_path.insert(0, [x, y]) # insert current position
 
         theta = 0.0
+        self.path = []
         for i in range(len(pos_path)):
             if i < len(pos_path)-1:
                 theta = math.atan2(pos_path[i+1][1] - pos_path[i][1],
                                    pos_path[i+1][0] - pos_path[i][0])
+            pos_path[i].append(theta)
             pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-                                                               pos_path[i][0],
-                                                               pos_path[i][1],
-                                                               theta)
-            path_msg.poses.append(pose)
+                                                               *pos_path[i])
+            self.path.append(pose)
+
+        path_msg.poses = self.path
 
         self._path_pub.publish(path_msg)
+        if len(self.path) > 1:
+            self.path.pop(0) # remove current location
+            self.path.pop(0) # remove current area's wp
         rospy.loginfo('Planned path successfully')
 
 
 if __name__ == "__main__":
     rospy.init_node('osm_navigation')
     OSMN = OSMNavigation()
-    rospy.spin()
+    CONTROL_RATE = rospy.get_param('~control_rate', 0.5)
+    RATE = rospy.Rate(CONTROL_RATE)
+    rospy.on_shutdown(OSMN._reset_state)
+    try:
+        while not rospy.is_shutdown():
+            OSMN.run_once()
+            RATE.sleep()
+    except Exception as e:
+        if type(e) != rospy.exceptions.ROSInterruptException:
+            rospy.logerr(str(e))
+            traceback.print_exc()
     rospy.loginfo('Exiting.')

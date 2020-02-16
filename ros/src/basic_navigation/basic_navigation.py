@@ -4,6 +4,7 @@ import tf
 import copy
 import math
 import rospy
+from std_msgs.msg import Empty
 from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PoseStamped, PointStamped
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
@@ -74,6 +75,7 @@ class BasicNavigation(object):
         # Subscribers
         costmap_sub = rospy.Subscriber('~costmap', OccupancyGrid, self.costmap_cb)
         goal_sub = rospy.Subscriber('~goal', PoseStamped, self.goal_cb)
+        cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
         # localisation_sub = rospy.Subscriber('~localisation', PoseWithCovarianceStamped, self.localisation_cb)
 
         # Service client
@@ -117,12 +119,8 @@ class BasicNavigation(object):
             angular_dist = Utils.get_shortest_angle(curr_goal[2], self.curr_pos[2])
             if abs(angular_dist) < self.goal_theta_tolerance:
                 rospy.loginfo('REACHED GOAL')
-                self.publish_zero_vel()
                 self.publish_nav_feedback(ManeuverNavFeedback.SUCCESS)
-                self.goal = None
-                self.plan = None
-                self.moving_backward = False
-                self.reached_goal_once = False
+                self._reset_state()
                 return
             else:
                 self._rotate_in_place(theta_error=angular_dist)
@@ -130,6 +128,7 @@ class BasicNavigation(object):
         if dist < self.waypoint_dist_tolerance and len(self.plan) > 1:
             rospy.loginfo('Reached waypoint')
             self.plan.pop(0)
+            self.publish_nav_feedback(ManeuverNavFeedback.BUSY)
 
         heading = math.atan2(curr_goal[1]-self.curr_pos[1], curr_goal[0]-self.curr_pos[0])
         heading_diff = Utils.get_shortest_angle(heading, self.curr_pos[2])
@@ -165,11 +164,8 @@ class BasicNavigation(object):
                 self.plan = None
             else:
                 rospy.logerr('ABORTING')
-                self.retry_attempts = 0
-                self.publish_zero_vel()
                 self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
-                self.goal = None
-                self.moving_backward = False
+                self._reset_state()
             return
 
         future_vel_prop_raw = pos_error * self.p_linear
@@ -208,7 +204,7 @@ class BasicNavigation(object):
         self.moving_backward = False
         if self.plan is not None:
             self.plan = None
-            rospy.logwarn('Preempting current goal. User requested another goal')
+            rospy.logwarn('Preempting previous goal. User requested another goal')
 
     # def localisation_cb(self, msg):
     #     self.curr_pos = Utils.get_x_y_theta_from_pose(msg.pose.pose)
@@ -247,16 +243,15 @@ class BasicNavigation(object):
             else:
                 rospy.logerr('Global planner failed.')
                 rospy.logerr('ABORTING')
-                self.goal = None
-                self.moving_backward = False
-                self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
+                self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
+                self._reset_state()
                 return
         except rospy.ServiceException as e:
             rospy.logerr('Global planner failed.')
-            rospy.logerr('ABORTING')
-            self.moving_backward = False
             rospy.logerr(str(e))
-            self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
+            rospy.logerr('ABORTING')
+            self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
+            self._reset_state()
             return
 
         first_pose = Utils.get_x_y_theta_from_pose(plan[0].pose)
@@ -330,9 +325,31 @@ class BasicNavigation(object):
         future_vel = self.max_linear_vel - (future_costmap_value * self.costmap_to_vel_multiplier)
         return future_vel
 
+    def _reset_state(self):
+        self.publish_zero_vel()
+        self.goal = None
+        self.plan = None
+        self.reached_goal_once = False
+        self.moving_backward = False
+        self.retry_attempts = 0
+
+    def cancel_current_goal(self, msg):
+        rospy.logwarn('PREEMPTING (cancelled goal)')
+        # TODO should send a preempted feedback
+        # self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
+        self._reset_state()
+
     def publish_zero_vel(self):
         self._cmd_vel_pub.publish(Utils.get_twist())
 
     def publish_nav_feedback(self, status):
-        self._nav_feedback_pub.publish(ManeuverNavFeedback(status=status))
+        """
+        Publish feedback for higher level components to manage/track the progress
+        """
+        # TODO: dist_to_obs is used as distance to goal. Should be changed
+        if status == ManeuverNavFeedback.BUSY:
+            dist = Utils.get_distance_between_points(self.goal[:2], self.curr_pos[:2])
+        else:
+            dist = 0.0
+        self._nav_feedback_pub.publish(ManeuverNavFeedback(status=status, dist_to_obs=dist))
 
