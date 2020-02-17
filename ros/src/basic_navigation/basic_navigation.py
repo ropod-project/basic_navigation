@@ -138,7 +138,8 @@ class BasicNavigation(object):
         if abs(heading_diff) > self.heading_tolerance:
             self._rotate_in_place(theta_error=heading_diff)
         else:
-            self._move_forward(pos_error=dist, theta_error=heading_diff)
+            total_dist = Utils.get_distance_between_points(self.curr_pos[:2], self.goal[:2])
+            self._move_forward(pos_error=total_dist, theta_error=heading_diff)
 
     def _rotate_in_place(self, theta_error=1.0):
         theta_vel_raw = theta_error * self.p_theta_in_place
@@ -252,9 +253,17 @@ class BasicNavigation(object):
         self.plan = self.global_planner_utils.get_global_plan(self.curr_pos, self.goal)
         if self.plan is None:
             rospy.logerr('Global planner failed.')
-            rospy.logerr('ABORTING')
-            self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
-            self._reset_state()
+            if self.retry_attempts < self.num_of_retries:
+                rospy.loginfo('Retrying')
+                self.retry_attempts += 1
+                self.publish_zero_vel()
+                if self.recovery_enabled:
+                    self.recover()
+                self.publish_nav_feedback(ManeuverNavFeedback.BUSY)
+            else:
+                rospy.logerr('ABORTING')
+                self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_EMPTY_PLAN)
+                self._reset_state()
             return
 
         # publish path
