@@ -4,6 +4,13 @@ use_global_planner: True
 num_of_retries: 2
 allow_backward_motion: False
 
+# laser
+min_angle_front: -0.5
+max_angle_front: 0.5
+min_angle_back: -0.5
+max_angle_back: 0.5
+base_link_laser_dist: 0.2
+
 # recovery
 recovery_enabled: True
 recovery_wait_duration: 3.0 # seconds
@@ -27,6 +34,9 @@ p_theta: 1.0
 p_linear: 1.0
 max_theta_vel: 0.5
 min_theta_vel: 0.005
-max_linear_vel: 0.5
+max_linear_vel: 0.3
+max_linear_vel_fast: 0.7
 min_linear_vel: 0.1
-future_pos_lookahead_dist: 0.4
+max_linear_acc: 0.5
+safety_dist: 0.4
+future_pos_lookahead_time: 3.0

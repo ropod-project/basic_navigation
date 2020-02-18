@@ -5,9 +5,10 @@ import copy
 import math
 import rospy
 from std_msgs.msg import Empty
-from nav_msgs.msg import OccupancyGrid, Path
+from nav_msgs.msg import Path, Odometry
 from geometry_msgs.msg import PoseStamped, PointStamped
 from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
+from sensor_msgs.msg import LaserScan
 from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from utils import Utils
@@ -30,6 +31,16 @@ class BasicNavigation(object):
         self.allow_backward_motion = rospy.get_param('~allow_backward_motion', False)
         self.num_of_retries = rospy.get_param('~num_of_retries', 3)
         self.retry_attempts = 0
+        self.current_vel = 0.0
+        self.min_laser_dist_front = 0.0
+        self.min_laser_dist_back = 0.0
+
+        # lasers
+        self.min_angle_front = rospy.get_param('~min_angle_front', -0.5)
+        self.max_angle_front = rospy.get_param('~max_angle_front', -0.5)
+        self.min_angle_back = rospy.get_param('~min_angle_back', -0.5)
+        self.max_angle_back = rospy.get_param('~max_angle_back', 0.5)
+        self.base_link_laser_dist = rospy.get_param('~base_link_laser_dist', 0.0)
 
         # tolerances
         self.heading_tolerance = rospy.get_param('~heading_tolerance', 0.5)
@@ -48,7 +59,11 @@ class BasicNavigation(object):
         self.min_theta_vel = rospy.get_param('~min_theta_vel', 0.005)
         self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
         self.min_linear_vel = rospy.get_param('~min_linear_vel', 0.1)
-        self.future_pos_lookahead_dist = rospy.get_param('~future_pos_lookahead_dist', 0.4)
+        max_linear_acc_per_second = rospy.get_param('~max_linear_acc', 0.5)
+        control_rate = rospy.get_param('~control_rate', 5.0)
+        self.max_linear_acc = max_linear_acc_per_second/control_rate
+        self.safety_dist = rospy.get_param('~safety_dist', 0.4)
+        self.future_pos_lookahead_time = rospy.get_param('~future_pos_lookahead_time', 3.0)
 
         # recovery
         self.recovery_enabled = rospy.get_param('~recovery_enabled', False)
@@ -64,6 +79,8 @@ class BasicNavigation(object):
         # Publishers
         self._cmd_vel_pub = rospy.Publisher('~cmd_vel', Twist, queue_size=1)
         self._path_pub = rospy.Publisher('~path', Path, queue_size=1)
+        self._traj_pub = rospy.Publisher('~trajectory', Path, queue_size=1)
+        self._laser_pub = rospy.Publisher('~collision_scan', LaserScan, queue_size=1)
         self._collision_lookahead_point_pub = rospy.Publisher('~collision_point',
                                                               PointStamped,
                                                               queue_size=1)
@@ -72,10 +89,11 @@ class BasicNavigation(object):
                                                  queue_size=1)
 
         # Subscribers
-        costmap_sub = rospy.Subscriber('~costmap', OccupancyGrid, self.costmap_cb)
+        laser_sub = rospy.Subscriber('~laser', LaserScan, self.laser_cb)
         goal_sub = rospy.Subscriber('~goal', PoseStamped, self.goal_cb)
         path_sub = rospy.Subscriber('~goal_path', Path, self.path_cb)
         cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
+        odom_sub = rospy.Subscriber('~odom', Odometry, self.odom_cb)
 
         # Global planner
         if self.use_global_planner:
@@ -147,35 +165,54 @@ class BasicNavigation(object):
         self._cmd_vel_pub.publish(Utils.get_twist(x=0.0, y=0.0, theta=theta_vel))
 
     def _move_forward(self, pos_error=1.0, theta_error=1.0):
-        future_vel_costmap = self._get_vel_based_on_costmap()
-        if future_vel_costmap < self.min_linear_vel:
-            rospy.logerr('Obstacle ahead. Current plan failed.')
-            if self.retry_attempts < self.num_of_retries:
-                rospy.loginfo('Retrying')
-                self.retry_attempts += 1
-                self.publish_zero_vel()
-                if self.recovery_enabled:
-                    self.recover()
-                self.publish_nav_feedback(ManeuverNavFeedback.BUSY)
-                self.plan = None
-            else:
-                rospy.logerr('ABORTING')
-                self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
-                self._reset_state()
-            return
-
         future_vel_prop_raw = pos_error * self.p_linear
         future_vel_prop = Utils.clip(future_vel_prop_raw, self.max_linear_vel, self.min_linear_vel)
 
-        x_vel = min(future_vel_costmap, future_vel_prop)
-        if self.moving_backward:
-            x_vel *= -1
         theta_vel_raw = theta_error * self.p_theta
         theta_vel = Utils.clip(theta_vel_raw, self.max_theta_vel, self.min_theta_vel)
+
+        num_of_points = 10
+        future_points = Utils.get_future_positions(future_vel_prop,
+                                                   theta_vel,
+                                                   num_of_points,
+                                                   self.future_pos_lookahead_time)
+        collision_index = self._get_collision_index(future_points)
+
+        if collision_index == 0:
+            self.retry()
+            return
+
+        desired_x_vel = future_vel_prop * (float(collision_index)/num_of_points)
+        desired_x_vel = Utils.clip(desired_x_vel, self.max_linear_vel, self.min_linear_vel)
+
+        # ramp up the vel according to max_linear_acc
+        x_vel = min(desired_x_vel, self.current_vel + self.max_linear_acc)
+
+        if self.moving_backward:
+            x_vel *= -1
+            for p in future_points:
+                p.x *= -1
         self._cmd_vel_pub.publish(Utils.get_twist(x=x_vel, y=0.0, theta=theta_vel))
+        self._traj_pub.publish(self._get_path_msg_from_points(future_points))
+
+    def retry(self):
+        rospy.logerr('Obstacle ahead. Current plan failed.')
+        if self.retry_attempts < self.num_of_retries:
+            rospy.loginfo('Retrying')
+            self.retry_attempts += 1
+            self.publish_zero_vel()
+            if self.recovery_enabled:
+                self.recover()
+            self.publish_nav_feedback(ManeuverNavFeedback.BUSY)
+            self.plan = None
+        else:
+            rospy.logerr('ABORTING')
+            self.publish_nav_feedback(ManeuverNavFeedback.FAILURE_OBSTACLES)
+            self._reset_state()
 
     def recover(self):
         rospy.loginfo('Recovering')
+        self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
         if self.recovery_wait_duration > 0:
             rospy.loginfo('Recovery bahaviour: WAITING (duration: ' +
                           str(self.recovery_wait_duration) + ' seconds)')
@@ -194,13 +231,12 @@ class BasicNavigation(object):
         rospy.loginfo('Recovery finished')
 
     def goal_cb(self, msg):
+        if self.plan is not None:
+            rospy.logwarn('Preempting previous goal. User requested another goal')
+        self._reset_state()
         self.goal = Utils.get_x_y_theta_from_pose(msg.pose)
         rospy.loginfo('Received new goal')
         rospy.loginfo(self.goal)
-        self.moving_backward = False
-        if self.plan is not None:
-            self.plan = None
-            rospy.logwarn('Preempting previous goal. User requested another goal')
 
     def path_cb(self, msg):
         # sanity checks
@@ -218,20 +254,49 @@ class BasicNavigation(object):
             rospy.logwarn('Goal path first point is too far from robot. Ignoring.')
             return
 
-        dist_between_wp = rospy.get_param('~dist_between_wp', None)
-        if len(path) > 1 and dist_between_wp is not None:
-            second_pose = Utils.get_x_y_theta_from_pose(path[1].pose)
-            avg_dist = Utils.get_distance_between_points(first_pose[:2], second_pose[:2])
-            if abs(avg_dist - dist_between_wp) > 0.5:
-                rospy.logwarn('Distance between waypoints is ' + str(avg_dist) \
-                              + ' Expecting value around ' + str(dist_between_wp) + '. Ignoring.')
-                return
+        if len(path) == 2:
+            self.max_linear_vel = rospy.get_param('~max_linear_vel_fast', 0.3)
+        else:
+            self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
+        print(self.max_theta_vel)
         self.plan = path
         self.goal = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
         self._path_pub.publish(msg)
 
-    def costmap_cb(self, msg):
-        self.costmap_msg = msg
+    def odom_cb(self, msg):
+        self.current_vel = msg.twist.twist.linear.x
+
+    def laser_cb(self, msg):
+        angle_inc = msg.angle_increment
+
+        if msg.angle_min > self.min_angle_front or msg.angle_max < self.max_angle_front:
+            rospy.logerr("laser message data not available in filter range")
+
+        first_index = int((self.min_angle_front - msg.angle_min)/angle_inc)
+        last_index = int((self.max_angle_front - msg.angle_min )/angle_inc)
+        filtered_ranges = msg.ranges[first_index:last_index]
+        self.min_laser_dist_front = min(filtered_ranges)
+
+        filtered_ranges_back = []
+        if self.allow_backward_motion:
+            if msg.angle_min > self.min_angle_back or msg.angle_max < self.max_angle_back:
+                rospy.logerr("laser message data not available in filter range")
+
+            first_index = int((self.min_angle_back - msg.angle_min)/angle_inc)
+            last_index = int((self.max_angle_back - msg.angle_min )/angle_inc)
+            filtered_ranges_back = msg.ranges[first_index:last_index]
+            self.min_laser_dist_back = min(filtered_ranges_back)
+
+        filtered_laser_msg = LaserScan()
+        filtered_laser_msg.header = msg.header
+        filtered_laser_msg.angle_min = self.min_angle_front
+        filtered_laser_msg.angle_max = self.max_angle_front
+        filtered_laser_msg.angle_increment = msg.angle_increment
+        filtered_laser_msg.range_min = msg.range_min
+        filtered_laser_msg.range_max = msg.range_max
+        filtered_laser_msg.ranges = filtered_ranges_back if self.moving_backward else filtered_ranges
+
+        self._laser_pub.publish(filtered_laser_msg)
 
     def get_current_position_from_tf(self):
         try:
@@ -292,43 +357,31 @@ class BasicNavigation(object):
 
         self._path_pub.publish(path_msg)
 
-    def _get_costmap_value_at(self, x=0.0, y=0.0):
-        """
-        # Assumption: costmap's global_frame is map
-        :x: float
-        :y: float
-
-        :returns: int (between -1 and 100)
-        """
-        costmap_origin_x = self.costmap_msg.info.origin.position.x
-        costmap_origin_y = self.costmap_msg.info.origin.position.y
-        diff_x = x - costmap_origin_x
-        diff_y = y - costmap_origin_y
-        if diff_x < 0 or diff_y < 0:
-            return -1
-        i = int(round(diff_x/self.costmap_msg.info.resolution))
-        j = int(round(diff_y/self.costmap_msg.info.resolution))
-        if i > self.costmap_msg.info.width or j > self.costmap_msg.info.height:
-            return -1
-        return self.costmap_msg.data[j * self.costmap_msg.info.width + i]
-
-    def _get_vel_based_on_costmap(self):
-        current_heading = self.curr_pos[2]
+    def _get_collision_index(self, points):
         if self.moving_backward:
-            current_heading = Utils.get_reverse_angle(current_heading)
-        future_pos = (self.curr_pos[0] + self.future_pos_lookahead_dist * math.cos(current_heading),
-                      self.curr_pos[1] + self.future_pos_lookahead_dist * math.sin(current_heading))
-        collision_point = PointStamped()
-        collision_point.header.stamp = rospy.Time.now()
-        collision_point.header.frame_id = self.global_frame
-        collision_point.point.x = future_pos[0]
-        collision_point.point.y = future_pos[1]
-        self._collision_lookahead_point_pub.publish(collision_point)
-        future_costmap_value = self._get_costmap_value_at(*future_pos)
-        future_vel = self.max_linear_vel - (future_costmap_value * self.costmap_to_vel_multiplier)
-        return future_vel
+            obs_dist_from_base = self.min_laser_dist_back - self.base_link_laser_dist - self.safety_dist
+        else:
+            obs_dist_from_base = self.min_laser_dist_front + self.base_link_laser_dist - self.safety_dist
+
+        for i in range(len(points)):
+            if points[i].x > obs_dist_from_base:
+                return i
+        return len(points)
+
+    def _get_path_msg_from_points(self, points):
+        path_msg = Path()
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.frame_id = self.robot_frame
+
+        for p in points:
+            pose = PoseStamped()
+            pose.pose.position = p
+            pose.pose.orientation.w = 1.0
+            path_msg.poses.append(pose)
+        return path_msg
 
     def _reset_state(self):
+        self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
         self.publish_zero_vel()
         self.goal = None
         self.plan = None
