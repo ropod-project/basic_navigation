@@ -4,7 +4,7 @@ import tf
 import math
 import rospy
 from geometry_msgs.msg import PoseStamped, Pose, TransformStamped, Quaternion
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
 
 class Utils(object):
 
@@ -152,3 +152,34 @@ class Utils(object):
         msg.linear.y = y
         msg.angular.z = theta
         return msg
+
+    @staticmethod
+    def get_future_positions(vel_x, vel_theta, num_of_points, future_time):
+        """
+        Calculate a bunch of points where the robot would be (in base_link) in future when 
+        certain velocity are executed.
+        The last point would be the position of robot almost at `future_time` and first
+        point is the robot's current position.
+
+        :vel_x: float (forward linear velocity)
+        :vel_theta: float (angular yaw velocity)
+        :num_of_points: int (number of points to generate)
+        :future_time: float (seconds)
+        :returns: list of geometry_msgs.Point
+
+        """
+        dist = abs(vel_x) * future_time
+        angular_dist = abs(vel_theta) * future_time
+        radius = dist/angular_dist
+
+        sign_x = 1 if vel_x > 0 else -1
+        sign_theta = 1 if vel_theta > 0 else -1
+
+        theta_inc = angular_dist/num_of_points
+        points = []
+        for i in range(num_of_points):
+            theta = i * theta_inc
+            x = sign_x * (radius * math.sin(theta))
+            y = sign_theta * radius * (1 - math.cos(theta))
+            points.append(Point(x=x, y=y, z=0.0))
+        return points

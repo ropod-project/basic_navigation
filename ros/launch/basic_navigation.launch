@@ -2,7 +2,8 @@
 <launch>
 
     <arg name="robot_name" default="ropod_sim" />
-    <arg name="costmap_topic" default="/local_costmap/costmap/costmap"/>
+    <arg name="laser_topic" default="/load/scan"/>
+    <arg name="odom_topic" default="/load/odom"/>
     <arg name="goal_topic" default="/move_base_simple/goal"/>
     <arg name="localisation_topic" default="/amcl_pose"/>
     <arg name="cmd_vel_topic" default="/load/cmd_vel"/>
@@ -29,7 +30,8 @@
         <rosparam command="load"
         file="$(find basic_navigation)/ros/config/$(arg robot_name)/basic_navigation_params.yaml" />
         <param name="global_planner_service" type="string" value="$(arg global_planner_service)"/>
-        <remap from="~costmap" to="$(arg costmap_topic)"/>
+        <remap from="~laser" to="$(arg laser_topic)"/>
+        <remap from="~odom" to="$(arg odom_topic)"/>
         <remap from="~goal" to="$(arg goal_topic)"/>
         <remap from="~localisation" to="$(arg localisation_topic)"/>
         <remap from="~cmd_vel" to="$(arg cmd_vel_topic)"/>

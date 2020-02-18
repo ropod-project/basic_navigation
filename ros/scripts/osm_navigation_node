@@ -109,15 +109,33 @@ class OSMNavigation(object):
             start_pos = Utils.get_x_y_theta_from_pose(old_wp.pose)
         if start_pos is not None:
             new_wp = Utils.get_x_y_theta_from_pose(self.path[0].pose)
-            global_planner_path = self.global_planner_utils.get_global_plan(start_pos, new_wp)
-            if global_planner_path is not None:
-                path_msg = Path(poses=global_planner_path)
-                path_msg.header.stamp = rospy.Time.now()
-                path_msg.header.frame_id = self.global_frame
-                self._bn_path_pub.publish(path_msg)
-                rospy.loginfo('Sent new path')
-                self.bn_reached_curr_wp = False
-                return
+
+            plan = []
+            path_msg = Path()
+            path_msg.header.frame_id = self.global_frame
+            path_msg.header.stamp = rospy.Time.now()
+
+            start_pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
+                                                                     *start_pos)
+            goal_pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
+                                                                    *new_wp)
+            plan.append(start_pose)
+            plan.append(goal_pose)
+            path_msg.poses = plan
+
+            self._bn_path_pub.publish(path_msg)
+            rospy.loginfo('Sent new path')
+            self.bn_reached_curr_wp = False
+            return
+            # global_planner_path = self.global_planner_utils.get_global_plan(start_pos, new_wp)
+            # if global_planner_path is not None:
+            #     path_msg = Path(poses=global_planner_path)
+            #     path_msg.header.stamp = rospy.Time.now()
+            #     path_msg.header.frame_id = self.global_frame
+            #     self._bn_path_pub.publish(path_msg)
+            #     rospy.loginfo('Sent new path')
+            #     self.bn_reached_curr_wp = False
+            #     return
         self._bn_wp_pub.publish(self.path[0])
         rospy.loginfo('Sent new WP')
         self.bn_reached_curr_wp = False
@@ -133,10 +151,11 @@ class OSMNavigation(object):
         self._reset_state()
 
     def _reset_state(self):
+        if self.goal is not None:
+            self._cancel_bn_pub.publish(Empty())
         self.goal = None
         self.path = None
         self.bn_reached_curr_wp = False
-        self._cancel_bn_pub.publish(Empty())
         rospy.sleep(0.5)
         
     def get_current_position_from_tf(self):
