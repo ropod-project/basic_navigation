@@ -182,6 +182,7 @@ class BasicNavigation(object):
             return
 
         desired_x_vel = future_vel_prop * (float(collision_index)/num_of_points)
+        desired_x_vel = Utils.clip(desired_x_vel, self.max_linear_vel, self.min_linear_vel)
 
         # ramp up the vel according to max_linear_acc
         x_vel = min(desired_x_vel, self.current_vel + self.max_linear_acc)
