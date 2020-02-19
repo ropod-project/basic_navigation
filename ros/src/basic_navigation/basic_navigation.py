@@ -249,6 +249,8 @@ class BasicNavigation(object):
 
         if len(path) == 2:
             self.max_linear_vel = rospy.get_param('~max_linear_vel_fast', 0.7)
+            self.goal_dist_tolerance = rospy.get_param('~goal_dist_tolerance_lenient', 0.3)
+            self.goal_theta_tolerance = rospy.get_param('~goal_theta_tolerance_lenient', 0.3)
         else:
             self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
         self.plan = path
@@ -340,6 +342,8 @@ class BasicNavigation(object):
 
     def _reset_state(self):
         self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
+        self.goal_dist_tolerance = rospy.get_param('~goal_dist_tolerance', 0.1)
+        self.goal_theta_tolerance = rospy.get_param('~goal_theta_tolerance', 0.1)
         self.publish_zero_vel()
         self.goal = None
         self.plan = None

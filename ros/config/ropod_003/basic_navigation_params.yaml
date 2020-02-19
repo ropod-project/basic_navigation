@@ -18,6 +18,8 @@ recovery_vel: -0.15
 heading_tolerance: 0.5
 goal_dist_tolerance: 0.1
 goal_theta_tolerance: 0.1
+goal_dist_tolerance_lenient: 0.3
+goal_theta_tolerance_lenient: 0.3
 latch_xy_goal: True
 dist_between_wp: 1.0
 waypoint_goal_tolerance: 0.3
