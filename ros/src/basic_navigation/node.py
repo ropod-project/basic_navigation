@@ -27,3 +27,12 @@ class Node(object):
                     'area_name':self.area_name, 'area_type':self.area_type}
         return dict_obj
 
+    @staticmethod
+    def from_dict(dict_obj):
+        """Initialise Node obj from dictionary
+
+        :dict_obj: dict
+        :returns: Node
+
+        """
+        return Node(dict_obj['id'], dict_obj['x'], dict_obj['y'], dict_obj['area_name'], dict_obj['area_type'])
