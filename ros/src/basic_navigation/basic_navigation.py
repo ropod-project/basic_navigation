@@ -34,6 +34,8 @@ class BasicNavigation(object):
         self.current_vel = 0.0
         self.min_laser_dist_front = 0.0
         self.min_laser_dist_back = 0.0
+        self.front_laser_ranges = None
+        self.back_laser_ranges = None
 
         # lasers
         self.min_angle_front = rospy.get_param('~min_angle_front', -0.5)
@@ -178,7 +180,9 @@ class BasicNavigation(object):
                                                    self.future_pos_lookahead_time)
         collision_index = self._get_collision_index(future_points)
 
-        if collision_index == 0:
+        valid = self._check_plan_validity(dist_to_curr_wp=pos_error)
+
+        if collision_index == 0 or (not valid):
             self.retry()
             return
 
@@ -255,10 +259,9 @@ class BasicNavigation(object):
             return
 
         if len(path) == 2:
-            self.max_linear_vel = rospy.get_param('~max_linear_vel_fast', 0.3)
+            self.max_linear_vel = rospy.get_param('~max_linear_vel_fast', 0.7)
         else:
             self.max_linear_vel = rospy.get_param('~max_linear_vel', 0.3)
-        print(self.max_theta_vel)
         self.plan = path
         self.goal = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
         self._path_pub.publish(msg)
@@ -276,6 +279,7 @@ class BasicNavigation(object):
         last_index = int((self.max_angle_front - msg.angle_min )/angle_inc)
         filtered_ranges = msg.ranges[first_index:last_index]
         self.min_laser_dist_front = min(filtered_ranges)
+        self.front_laser_ranges = filtered_ranges
 
         filtered_ranges_back = []
         if self.allow_backward_motion:
@@ -286,6 +290,7 @@ class BasicNavigation(object):
             last_index = int((self.max_angle_back - msg.angle_min )/angle_inc)
             filtered_ranges_back = msg.ranges[first_index:last_index]
             self.min_laser_dist_back = min(filtered_ranges_back)
+            self.back_laser_ranges = filtered_ranges_back
 
         filtered_laser_msg = LaserScan()
         filtered_laser_msg.header = msg.header
@@ -367,6 +372,44 @@ class BasicNavigation(object):
             if points[i].x > obs_dist_from_base:
                 return i
         return len(points)
+
+    def _check_plan_validity(self, dist_to_curr_wp=1.0):
+        lookahead_plan_num = 2
+        if len(self.plan) == 1 and dist_to_curr_wp > self.global_planner_utils.dist_between_wp:
+            diff_x = (self.goal[0] - self.curr_pos[0])/dist_to_curr_wp
+            diff_y = (self.goal[1] - self.curr_pos[1])/dist_to_curr_wp
+            future_plan = []
+            for i in range(lookahead_plan_num):
+                pose = copy.deepcopy(self.plan[0])
+                pose.pose.position.x = self.curr_pos[0] + (diff_x * self.global_planner_utils.dist_between_wp)
+                pose.pose.position.y = self.curr_pos[1] + (diff_y * self.global_planner_utils.dist_between_wp)
+                future_plan.append(pose)
+        else:
+            future_plan = copy.deepcopy(self.plan[:lookahead_plan_num])
+        # transform wp into local frame
+        local_frame_wp_list = []
+        for wp in future_plan:
+            try:
+                common_time = self._tf_listener.getLatestCommonTime(self.global_frame, self.robot_frame)
+                wp.header.stamp = common_time
+                transformed_pose = self._tf_listener.transformPose(self.robot_frame, wp)
+                local_frame_wp_list.append(transformed_pose.pose.position)
+            except Exception as e:
+                rospy.logerr(str(e))
+                return True
+        for wp in local_frame_wp_list:
+            angle = math.atan2(wp.y, wp.x)
+            dist_at_angle = self._get_laser_dist_at(angle)
+            if wp.x > dist_at_angle:
+                return False
+        return True
+
+    def _get_laser_dist_at(self, angle):
+        if angle < self.min_angle_front or angle > self.max_angle_front:
+            return float('inf')
+        angle_inc = (self.max_angle_front-self.min_angle_front)/len(self.front_laser_ranges)
+        range_index = int(round((angle-self.min_angle_front)/angle_inc))
+        return self.front_laser_ranges[range_index]
 
     def _get_path_msg_from_points(self, points):
         path_msg = Path()
