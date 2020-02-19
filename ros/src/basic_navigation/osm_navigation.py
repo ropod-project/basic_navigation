@@ -8,12 +8,12 @@ import traceback
 from OBL import OSMBridge, PathPlanner
 
 from std_msgs.msg import String, Empty
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PointStamped, Point
 from nav_msgs.msg import Path
 from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from utils import Utils
-from global_planner_utils import GlobalPlannerUtils
+from topological_planner import TopologicalPlanner
 
 class OSMNavigation(object):
 
@@ -37,16 +37,17 @@ class OSMNavigation(object):
         self.global_frame = rospy.get_param('~global_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
         self.wp_goal_tolerance = rospy.get_param('~wp_goal_tolerance', 1.0)
+        network_file = rospy.get_param('~network_file', None)
 
         # class variables
         self.tf_listener = tf.TransformListener()
-        self.global_planner_utils = GlobalPlannerUtils()
+        self.topological_planner = TopologicalPlanner(network_file)
         self.path = None
         self.goal = None
         self.bn_reached_curr_wp = None
 
         # subscribers
-        goal_sub = rospy.Subscriber('~goal', String, self.goal_cb)
+        clicked_point_sub = rospy.Subscriber('/clicked_point', PointStamped, self.goal_cb)
         cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
         bn_feedback_sub = rospy.Subscriber('~bn_feedback', ManeuverNavFeedback,
                                            self.bn_feedback_cb)
@@ -68,8 +69,8 @@ class OSMNavigation(object):
 
         if self.goal is not None and self.path is None:
             try:
-                self._get_osm_path(self.goal)
-                self.create_plan_and_send()
+                self._get_osm_path()
+                # self.create_plan_and_send()
             except Exception as e:
                 rospy.logerr('Caught following Exception\n\n')
                 traceback.print_exc()
@@ -96,7 +97,7 @@ class OSMNavigation(object):
             self._reset_state()
 
     def goal_cb(self, msg):
-        self.goal = msg.data
+        self.goal = (msg.point.x, msg.point.y, 0.0)
         rospy.loginfo('Received new goal')
         if self.path is not None:
             self.path = None
@@ -127,15 +128,6 @@ class OSMNavigation(object):
             rospy.loginfo('Sent new path')
             self.bn_reached_curr_wp = False
             return
-            # global_planner_path = self.global_planner_utils.get_global_plan(start_pos, new_wp)
-            # if global_planner_path is not None:
-            #     path_msg = Path(poses=global_planner_path)
-            #     path_msg.header.stamp = rospy.Time.now()
-            #     path_msg.header.frame_id = self.global_frame
-            #     self._bn_path_pub.publish(path_msg)
-            #     rospy.loginfo('Sent new path')
-            #     self.bn_reached_curr_wp = False
-            #     return
         self._bn_wp_pub.publish(self.path[0])
         rospy.loginfo('Sent new WP')
         self.bn_reached_curr_wp = False
@@ -170,70 +162,44 @@ class OSMNavigation(object):
             curr_pos = None
         return curr_pos
 
-    def _get_osm_path(self, dest_local_area):
+    def _get_osm_path(self):
         """
-        Tries to get a osm path from current location to `dest_local_area`
-        `dest_local_area` can be either a string or an int written as string
-        e.g.  "BRSU_C_L0_C7_LA1" or "66"
+        Call topological planner to get point plan from current position to goal pos
+        Generates orientation for point plan to create Path msg 
+        Publishes Path msg for visualisation
 
-        :dest_local_area: string or int
         :returns: None
 
         """
         curr_pos = self.get_current_position_from_tf()
         if curr_pos is None:
+            rospy.logerr('Cannot get current position of the robot')
             return None
-        x, y, _ = curr_pos
-        rospy.loginfo('Current pos: ' + str((x, y)))
-
-        current_floor = rospy.get_param('~floor', 0)
-        start_floor = self.floor_prefix + str(current_floor)
-        start_local_area_obj = self.osm_bridge.get_local_area(x=x, y=y,
-                                                              floor_name=start_floor,
-                                                              isLatlong=False)
-        try:
-            dest_local_area = int(dest_local_area)
-        except ValueError:
-            pass
-
-        dest_local_area_obj = self.osm_bridge.get_local_area(dest_local_area)
-        dest_local_area_obj.geometry
-        dest_area = dest_local_area_obj.parent_id
-        dest_floor = self.floor_prefix + str(dest_local_area_obj.level)
-
-        rospy.loginfo('Trying to plan a path from ' + str(start_local_area_obj.ref) \
-                        + ' to ' + str(dest_local_area_obj.ref))
-        osm_path = self.path_planner.get_path_plan(start_floor=start_floor,
-                                                   destination_floor=dest_floor,
-                                                   start_area=start_local_area_obj.parent_id,
-                                                   destination_area=dest_area,
-                                                   start_local_area=start_local_area_obj.id,
-                                                   destination_local_area=dest_local_area)
+        rospy.loginfo('Current pos: ' + str(curr_pos))
+    
+        plan = self.topological_planner.plan(curr_pos[:2], self.goal[:2])
+        if plan is None or len(plan) == 0:
+            rospy.logerr('Could not plan topological plan.')
+            self._reset_state()
+            return
 
         path_msg = Path()
         path_msg.header.frame_id = self.global_frame
         path_msg.header.stamp = rospy.Time.now()
 
-        pos_path = [[p.navigation_areas[0].topology.x,
-                     p.navigation_areas[0].topology.y] for p in osm_path]
-        pos_path.insert(0, [x, y]) # insert current position
-
         theta = 0.0
         self.path = []
-        for i in range(len(pos_path)):
-            if i < len(pos_path)-1:
-                theta = math.atan2(pos_path[i+1][1] - pos_path[i][1],
-                                   pos_path[i+1][0] - pos_path[i][0])
-            pos_path[i].append(theta)
+        for i in range(len(plan)):
+            if i < len(plan)-1:
+                theta = math.atan2(plan[i+1].y - plan[i].y, plan[i+1].x - plan[i].x)
             pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-                                                               *pos_path[i])
+                                                               plan[i].x,
+                                                               plan[i].y,
+                                                               theta)
             self.path.append(pose)
 
         path_msg.poses = self.path
 
         self._path_pub.publish(path_msg)
-        if len(self.path) > 1:
-            self.path.pop(0) # remove current location
-            self.path.pop(0) # remove current area's wp
         rospy.loginfo('Planned path successfully')
 

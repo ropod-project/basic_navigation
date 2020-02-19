@@ -25,16 +25,41 @@ class TopologicalPlanner(object):
             self.neighbours[node_id] = neighbour_list
 
     def plan(self, start=(0.0, 0.0), goal=(0.0, 0.0)):
-        """Plan a path from start node to goal
+        """Plan a path from start point to goal point
 
         :start: tuple of 2 float
         :goal: tuple of 2 float
-        :returns: list of Point
+        :returns: list of Point or None
 
         """
         start_node = self.get_nearest_topological_point(*start)
         goal_node = self.get_nearest_topological_point(*goal)
-        return self.plan_path(start_node, goal_node)
+        plan = self.plan_path(start_node, goal_node)
+
+        if plan is None:
+            return None
+
+        start_point = Point(x=start[0], y=start[1])
+        goal_point = Point(x=goal[0], y=goal[1])
+
+        if len(plan) == 1:
+            plan = [start_point, goal_point]
+        else: # whether to keep first area and last area or not
+            first_node = (plan[0].x, plan[0].y)
+            second_node = (plan[1].x, plan[1].y)
+            last_node = (plan[-1].x, plan[-1].y)
+            last_second_node = (plan[-2].x, plan[-2].y)
+            dist_1 = Utils.get_distance_between_points(start[:2], second_node)
+            dist_2 = Utils.get_distance_between_points(first_node, second_node)
+            if dist_1 < dist_2:
+                plan.pop(0)
+            dist_1 = Utils.get_distance_between_points(goal[:2], last_second_node)
+            dist_2 = Utils.get_distance_between_points(last_node, last_second_node)
+            if dist_1 < dist_2:
+                plan.pop()
+            plan.insert(0, start_point)
+            plan.append(goal_point)
+        return plan
 
     def plan_path(self, start_node, goal_node, search_type='bfs'):
         """Plan a path from start node to goal

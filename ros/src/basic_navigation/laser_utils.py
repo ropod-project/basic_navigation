@@ -66,7 +66,14 @@ class LaserUtils(object):
             return float('inf')
         angle_inc = (2*self.half_laser_fov)/len(self.front_laser_ranges)
         range_index = int(round((angle+self.half_laser_fov)/angle_inc))
-        return self.front_laser_ranges[range_index]
+        if self.moving_backward:
+            if range_index >= len(self.back_laser_ranges):
+                return float('inf')
+            return self.back_laser_ranges[range_index]
+        else:
+            if range_index >= len(self.front_laser_ranges):
+                return float('inf')
+            return self.front_laser_ranges[range_index]
 
     def get_collision_index(self, points):
         if self.moving_backward:
