@@ -3,6 +3,7 @@ from __future__ import print_function
 import tf
 import math
 import rospy
+from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, Pose, TransformStamped, Quaternion
 from geometry_msgs.msg import Twist, Point
 
@@ -183,3 +184,17 @@ class Utils(object):
             y = sign_theta * radius * (1 - math.cos(theta))
             points.append(Point(x=x, y=y, z=0.0))
         return points
+
+    @staticmethod
+    def get_path_msg_from_points(points, frame_id):
+        path_msg = Path()
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.frame_id = frame_id
+
+        for p in points:
+            pose = PoseStamped()
+            pose.pose.position = p
+            pose.pose.orientation.w = 1.0
+            path_msg.poses.append(pose)
+        return path_msg
+
