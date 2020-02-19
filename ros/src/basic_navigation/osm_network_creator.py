@@ -48,7 +48,9 @@ class OSMNetworkCreator(object):
         nodes = []
         node_ids = []
         connections = []
-        for connection_id in self.floor.connection_ids:
+        connection_ids = self.floor.connection_ids
+        connection_ids.extend(self.floor._member_ids['global_connection_blocked'] if 'global_connection_blocked' in self.floor._member_ids else [])
+        for connection_id in connection_ids:
             connection = self.osm_bridge.get_connection(connection_id)
             connection_list = connection.point_ids
 
