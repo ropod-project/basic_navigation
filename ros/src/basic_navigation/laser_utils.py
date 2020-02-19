@@ -78,4 +78,3 @@ class LaserUtils(object):
             if points[i].x > obs_dist_from_base:
                 return i
         return len(points)
-
