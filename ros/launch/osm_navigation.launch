@@ -1,7 +1,7 @@
 <?xml version='1.0'?>
 <launch>
 
-    <arg name="building" default="BRSU"/>
+    <arg name="laser_topic" default="/load/scan"/>
 
     <node pkg="basic_navigation" type="osm_navigation_node" name="osm_navigation"
           respawn="false" output="screen">
@@ -9,6 +9,7 @@
         <remap from="~cancel_bn" to="/basic_navigation/cancel" />
         <remap from="~bn_goal" to="/move_base_simple/goal" />
         <remap from="~bn_goal_path" to="/basic_navigation/goal_path" />
+        <remap from="~laser" to="$(arg laser_topic)" />
 
         <param name="network_file" value="$(find basic_navigation)/ros/config/osm_network.yaml"/>
         <param name="wp_goal_tolerance" type="double" value="1.5"/>

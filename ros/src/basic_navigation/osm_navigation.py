@@ -14,6 +14,7 @@ from maneuver_navigation.msg import Feedback as ManeuverNavFeedback
 
 from utils import Utils
 from topological_planner import TopologicalPlanner
+from geometric_planner import GeometricPlanner
 
 class OSMNavigation(object):
 
@@ -42,6 +43,7 @@ class OSMNavigation(object):
         # class variables
         self.tf_listener = tf.TransformListener()
         self.topological_planner = TopologicalPlanner(network_file)
+        self.geometric_planner = GeometricPlanner()
         self.path = None
         self.goal = None
         self.bn_reached_curr_wp = None
@@ -69,7 +71,8 @@ class OSMNavigation(object):
 
         if self.goal is not None and self.path is None:
             try:
-                self._get_osm_path()
+                # self._get_osm_path()
+                self._get_geometric_path()
                 # self.create_plan_and_send()
             except Exception as e:
                 rospy.logerr('Caught following Exception\n\n')
@@ -203,3 +206,42 @@ class OSMNavigation(object):
         self._path_pub.publish(path_msg)
         rospy.loginfo('Planned path successfully')
 
+    def _get_geometric_path(self):
+        """
+        Call geometric planner to get plan from current position to goal pos
+        Publishes Path msg for visualisation
+
+        :returns: None
+
+        """
+        curr_pos = self.get_current_position_from_tf()
+        if curr_pos is None:
+            rospy.logerr('Cannot get current position of the robot')
+            return None
+        rospy.loginfo('Current pos: ' + str(curr_pos))
+    
+        plan = self.geometric_planner.plan(curr_pos[:2], self.goal[:2])
+        if plan is None or len(plan) == 0:
+            rospy.logerr('Could not plan geometric plan.')
+            self._reset_state()
+            return
+
+        # path_msg = Path()
+        # path_msg.header.frame_id = self.global_frame
+        # path_msg.header.stamp = rospy.Time.now()
+
+        # theta = 0.0
+        # self.path = []
+        # for i in range(len(plan)):
+        #     if i < len(plan)-1:
+        #         theta = math.atan2(plan[i+1].y - plan[i].y, plan[i+1].x - plan[i].x)
+        #     pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
+        #                                                        plan[i].x,
+        #                                                        plan[i].y,
+        #                                                        theta)
+        #     self.path.append(pose)
+
+        # path_msg.poses = self.path
+
+        # self._path_pub.publish(path_msg)
+        rospy.loginfo('Planned path successfully')

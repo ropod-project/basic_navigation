@@ -1,8 +1,13 @@
 from __future__ import print_function
 
+import math
+import copy
 import rospy
+import sensor_msgs.point_cloud2 as pc2
+from laser_geometry import LaserProjection
 
-from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Point, PolygonStamped
+from sensor_msgs.msg import LaserScan, PointCloud2
 from utils import Utils
 
 class LaserUtils(object):
@@ -10,78 +15,87 @@ class LaserUtils(object):
     """Utils class to use laser data with basic navigation"""
 
     def __init__(self, **kwargs):
-        self.min_laser_dist_front = 0.0
-        self.min_laser_dist_back = 0.0
-        self.front_laser_ranges = None
-        self.back_laser_ranges = None
-        self.moving_backward = False
+        self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
 
-        # lasers
-        laser_fov = rospy.get_param('~laser_fov', 1.0)
-        self.half_laser_fov = laser_fov/2
-        # self.min_angle_front = rospy.get_param('~min_angle_front', -0.5)
-        # self.max_angle_front = rospy.get_param('~max_angle_front', 0.5)
-        # self.min_angle_back = rospy.get_param('~min_angle_back', -2.9)
-        # self.max_angle_back = rospy.get_param('~max_angle_back', 2.9)
-        self.base_link_laser_dist = rospy.get_param('~base_link_laser_dist', 0.0)
+        # class variables
+        self.laser_proj = LaserProjection()
+        self.footprint = [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]] # TODO use rosparam
+        self.base_link_to_laser_offset = (0.2, 0.0) # TODO use tf?
+        self.set_footprint_padding(0.1)
+        self.cloud = None
 
-        self.safety_dist = rospy.get_param('~safety_dist', 0.4)
+        # publisher
+        self.pc_pub = rospy.Publisher('~pc_debug', PointCloud2, queue_size=1)
+        self.footprint_pub = rospy.Publisher('~footprint_debug', PolygonStamped, queue_size=1)
 
-        self._collision_laser_pub = rospy.Publisher('~collision_scan', LaserScan, queue_size=1)
+        # subscribers
         laser_sub = rospy.Subscriber('~laser', LaserScan, self.laser_cb)
 
+        rospy.sleep(0.2)
+
     def laser_cb(self, msg):
-        angle_inc = msg.angle_increment
+        self.cloud = self.laser_proj.projectLaser(msg, channel_options=LaserProjection.ChannelOption.NONE)
+        self.pc_pub.publish(self.cloud)
 
-        if msg.angle_min > -self.half_laser_fov or msg.angle_max < self.half_laser_fov:
-            rospy.logerr("laser message data not available in filter range")
+    def is_safe_from_colliding_at(self, x=0.0, y=0.0, theta=0.0):
+        footprint = self.get_footprint_at(x, y, theta)
+        points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
+        for p in points:
+            if self.is_inside_polygon(p[0], p[1], footprint):
+                return False
+        return True
 
-        first_index = int((-self.half_laser_fov - msg.angle_min)/angle_inc)
-        last_index = int((self.half_laser_fov - msg.angle_min )/angle_inc)
-        self.front_laser_ranges = msg.ranges[first_index:last_index]
-        self.min_laser_dist_front = min(self.front_laser_ranges)
-
-        filtered_ranges_back = []
-        if msg.angle_min > -3.1 or msg.angle_max < 3.1:
-            rospy.logerr("laser message data not available in filter range")
-
-        first_index = int(self.half_laser_fov/angle_inc)
-        last_index = int((msg.angle_max - self.half_laser_fov - msg.angle_min )/angle_inc)
-        last_index -= len(msg.ranges)
-        self.back_laser_ranges = [msg.ranges[i] for i in range(first_index, last_index, -1)]
-        self.min_laser_dist_back = min(self.back_laser_ranges)
-
-        filtered_laser_msg = LaserScan()
-        filtered_laser_msg.header = msg.header
-        filtered_laser_msg.angle_min = -self.half_laser_fov
-        filtered_laser_msg.angle_max = self.half_laser_fov
-        filtered_laser_msg.angle_increment = msg.angle_increment
-        filtered_laser_msg.range_min = msg.range_min
-        filtered_laser_msg.range_max = msg.range_max
-        filtered_laser_msg.ranges = self.front_laser_ranges
-        self._collision_laser_pub.publish(filtered_laser_msg)
-
-    def get_laser_dist_at(self, angle):
-        if angle < -self.half_laser_fov or angle > self.half_laser_fov:
-            return float('inf')
-        angle_inc = (2*self.half_laser_fov)/len(self.front_laser_ranges)
-        range_index = int(round((angle+self.half_laser_fov)/angle_inc))
-        if self.moving_backward:
-            if range_index >= len(self.back_laser_ranges):
-                return float('inf')
-            return self.back_laser_ranges[range_index]
-        else:
-            if range_index >= len(self.front_laser_ranges):
-                return float('inf')
-            return self.front_laser_ranges[range_index]
+    def get_footprint_at(self, x=0.0, y=0.0, theta=0.0):
+        new_footprint = []
+        for p in self.padded_footprint:
+            new_x = (math.cos(theta) * p.x) + (-math.sin(theta) * p.y)
+            new_y = (math.sin(theta) * p.x) + (math.cos(theta) * p.y)
+            new_footprint.append(Point(x=new_x+x, y=new_y+y))
+        return new_footprint
 
     def get_collision_index(self, points):
-        if self.moving_backward:
-            obs_dist_from_base = self.min_laser_dist_back - self.base_link_laser_dist - self.safety_dist
-        else:
-            obs_dist_from_base = self.min_laser_dist_front + self.base_link_laser_dist - self.safety_dist
-
-        for i in range(len(points)):
-            if points[i].x > obs_dist_from_base:
+        for i, p in enumerate(points):
+            safe = self.is_safe_from_colliding_at(*p)
+            if not safe:
                 return i
         return len(points)
+
+    def pub_debug_footprint(self, footprint=None):
+        if footprint is None:
+            footprint = self.padded_footprint
+        polygon_msg = PolygonStamped()
+        polygon_msg.header.stamp = rospy.Time.now()
+        polygon_msg.header.frame_id = self.robot_frame
+        polygon_msg.polygon.points = footprint
+        self.footprint_pub.publish(polygon_msg)
+
+    def set_footprint_padding(self, padding):
+        if padding < 0.0:
+            return
+        self.padding = padding
+        self.initialise_padded_footprint()
+
+    def initialise_padded_footprint(self):
+        self.padded_footprint = []
+        for p in self.footprint:
+            sign_x = 1.0 if p[0] > 0 else -1.0
+            sign_y = 1.0 if p[1] > 0 else -1.0
+            x = p[0] + (sign_x * self.padding)
+            y = p[1] + (sign_y * self.padding)
+            self.padded_footprint.append(Point(x=x, y=y))
+
+    def is_inside_polygon(self, x, y, points):
+        """checks if point (x,y) is inside the polygon created by points
+
+        :x: int/float
+        :y: int/float
+        :points: list of geometry_msgs.Point
+        :returns: bool
+
+        """
+        xPoints = [p.x for p in points]
+        yPoints = [p.y for p in points]
+
+        return Utils.ray_tracing_algorithm(xPoints, yPoints,
+                                           x+self.base_link_to_laser_offset[0],
+                                           y+self.base_link_to_laser_offset[1])

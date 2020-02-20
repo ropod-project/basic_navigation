@@ -126,6 +126,53 @@ class Utils(object):
         return Utils.get_distance(p1[0]-p2[0], p1[1]-p2[1])
 
     @staticmethod
+    def get_spline_curve(points, n=11):
+        """Return `n` points on spline curve defined by `points` where first and 
+        last point is start and end point and all the points in the middle are 
+        control points.
+
+        :points: list of tuple(float, float)
+        :n: int
+        :returns: list of tuple(float, float)
+
+        """
+        order = len(points) - 1
+        coef = Utils.pascal_triangle_row(order)
+        offset = 1.0 / (n-1)
+        curve_points = []
+        curve_points.append(points[0]) # add start point as first curve point
+        # add n-2 curve points in middle
+        for factor in range(1, n-1):
+            t = offset * factor
+            x, y = 0.0, 0.0
+            for i in range(order+1):
+                x += coef[i] * (1-t)**(order-i) * t**(i) * points[i][0]
+                y += coef[i] * (1-t)**(order-i) * t**(i) * points[i][1]
+            curve_points.append((x, y))
+        curve_points.append(points[-1]) # add end point as last curve point
+        return curve_points
+
+    @staticmethod
+    def pascal_triangle_row(n):
+        """Returns `n`th row from pascal triangle.
+
+        :n: int
+        :returns: list of int
+
+        """
+        coef = [1]
+        for i in range(1, n+1):
+            coef.append(int(coef[-1] * ((n + 1.0 - i)/i)))
+        return coef
+
+    @staticmethod
+    def calc_heuristic_n_from_points(points):
+        dist = 0.0
+        for i in range(len(points)-1):
+            dist += Utils.get_distance_between_points(points[i], points[i+1])
+        return max(int(dist)*3, 10)
+
+    @staticmethod
     def clip(value, max_allowed=1.0, min_allowed=0.1):
         """Clip the provided value to be between the given range
 
@@ -186,6 +233,38 @@ class Utils(object):
         return points
 
     @staticmethod
+    def get_future_poses(vel_x, vel_theta, num_of_points, future_time):
+        """
+        Calculate a bunch of poses(x, y, theta) where the robot would be 
+        (in base_link) in future when certain velocity are executed.
+        The last point would be the position of robot almost at `future_time` and first
+        point is the robot's current position.
+
+        :vel_x: float (forward linear velocity)
+        :vel_theta: float (angular yaw velocity)
+        :num_of_points: int (number of points to generate)
+        :future_time: float (seconds)
+        :returns: list of tuples (float, float, float)
+
+        """
+        vel_theta = max(vel_theta, 0.0001)
+        dist = abs(vel_x) * future_time
+        angular_dist = abs(vel_theta) * future_time
+        radius = dist/angular_dist
+
+        sign_x = 1 if vel_x > 0 else -1
+        sign_theta = 1 if vel_theta > 0 else -1
+
+        theta_inc = angular_dist/num_of_points
+        points = []
+        for i in range(num_of_points):
+            theta = i * theta_inc
+            x = sign_x * (radius * math.sin(theta))
+            y = sign_theta * radius * (1 - math.cos(theta))
+            points.append((x, y, theta))
+        return points
+
+    @staticmethod
     def get_path_msg_from_points(points, frame_id):
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
@@ -197,4 +276,26 @@ class Utils(object):
             pose.pose.orientation.w = 1.0
             path_msg.poses.append(pose)
         return path_msg
+
+    @staticmethod
+    def ray_tracing_algorithm(vertx, verty, testx, testy):
+        """Checks if the point (textx, testy) is inside polygon defined by list vertx and verty
+        Taken from : https://stackoverflow.com/a/2922778/10460994
+        Implements ray tracing algorithm.
+
+        :vertx: list of floats
+        :verty: list of floats
+        :testx: float
+        :testy: float
+        :returns: bool
+
+        """
+        j = -1
+        counter = 0
+        for i in range(len(vertx)):
+            if (verty[i] > testy) != (verty[j] > testy) and \
+               (testx < ((vertx[j] - vertx[i]) * ((testy - verty[i]) / (verty[j] - verty[i])) + vertx[i])):
+                counter += 1
+            j = i
+        return (counter % 2 == 1)
 

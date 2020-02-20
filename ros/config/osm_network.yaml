@@ -3,7 +3,7 @@ nodes:
   area_type: corridor
   id: 1353
   x: 58.83
-  y: 31.82
+  y: 32.0
 - area_name: BRSU_C_L0_RoomC022
   area_type: room
   id: 1341
