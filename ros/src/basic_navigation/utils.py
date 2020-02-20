@@ -279,16 +279,13 @@ class Utils(object):
         return points
 
     @staticmethod
-    def get_path_msg_from_points(points, frame_id):
+    def get_path_msg_from_poses(poses, frame_id):
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
         path_msg.header.frame_id = frame_id
 
-        for p in points:
-            pose = PoseStamped()
-            pose.pose.position = p
-            pose.pose.orientation.w = 1.0
-            path_msg.poses.append(pose)
+        path_msg.poses = [Utils.get_pose_stamped_from_frame_x_y_theta(frame_id, pose[0], pose[1], pose[2])
+                          for pose in poses]
         return path_msg
 
     @staticmethod

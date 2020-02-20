@@ -37,10 +37,10 @@ class LaserUtils(object):
             self.pub_debug_footprint()
             rospy.sleep(0.2)
 
-
     def laser_cb(self, msg):
         self.cloud = self.laser_proj.projectLaser(msg, channel_options=LaserProjection.ChannelOption.NONE)
-        self.pc_pub.publish(self.cloud)
+        if self.debug:
+            self.pc_pub.publish(self.cloud)
 
     def is_safe_from_colliding_at(self, x=0.0, y=0.0, theta=0.0):
         footprint = self.get_footprint_at(x, y, theta)
@@ -74,7 +74,6 @@ class LaserUtils(object):
         polygon_msg.header.frame_id = self.robot_frame
         polygon_msg.polygon.points = footprint
         self.footprint_pub.publish(polygon_msg)
-        rospy.sleep(0.5)
 
     def set_footprint_padding(self, padding):
         if padding < 0.0:

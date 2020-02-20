@@ -1,40 +1,50 @@
 global_frame: 'map'
 robot_frame: 'load/base_link'
-use_global_planner: True
 num_of_retries: 2
 allow_backward_motion: False
-
-# laser
-laser_fov: 1.0
-base_link_laser_dist: 0.2
-
-# recovery
-recovery_enabled: True
-recovery_wait_duration: 3.0 # seconds
-recovery_motion_duration: 3.0 # seconds
-recovery_vel: -0.15
-
-# tolerances
-heading_tolerance: 0.5
-goal_dist_tolerance: 0.1
-goal_theta_tolerance: 0.1
-latch_xy_goal: True
-dist_between_wp: 1.0
-waypoint_goal_tolerance: 0.3
-goal_path_start_point_tolerance: 1.0
-max_safe_costmap_val: 80
-
-# controller params
 control_rate: 5.0
-p_theta_in_place: 5.0
-p_theta: 1.0
-p_linear: 1.0
-max_theta_vel: 0.5
-min_theta_vel: 0.005
-max_linear_vel: 0.3
-max_linear_vel_fast: 0.7
-min_linear_vel: 0.1
-max_linear_acc: 0.5
-safety_dist: 0.4
-future_pos_lookahead_time: 3.0
-lookahead_plan_wp: 2
+
+lenient:
+    # tolerances
+    heading_tolerance: 0.5
+    goal_dist_tolerance: 0.5
+    goal_theta_tolerance: 1.0
+    latch_xy_goal: True
+    waypoint_goal_tolerance: 0.5
+    goal_path_start_point_tolerance: 1.5
+    forward_safety_dist: 0.2
+    footprint_padding: 0.1
+
+    # controller params
+    control_rate: 5.0
+    p_theta_in_place: 5.0
+    p_theta: 1.0
+    p_linear: 1.0
+    max_theta_vel: 0.5
+    min_theta_vel: 0.005
+    max_linear_vel: 0.7
+    min_linear_vel: 0.1
+    max_linear_acc: 0.5
+    future_pos_lookahead_time: 5.0
+
+strict:
+    # tolerances
+    heading_tolerance: 0.5
+    goal_dist_tolerance: 0.1
+    goal_theta_tolerance: 0.1
+    latch_xy_goal: True
+    waypoint_goal_tolerance: 0.3
+    goal_path_start_point_tolerance: 1.0
+    forward_safety_dist: 0.0
+    footprint_padding: 0.02
+
+    # controller params
+    p_theta_in_place: 5.0
+    p_theta: 1.0
+    p_linear: 1.0
+    max_theta_vel: 0.5
+    min_theta_vel: 0.005
+    max_linear_vel: 0.3
+    min_linear_vel: 0.1
+    max_linear_acc: 0.5
+    future_pos_lookahead_time: 3.0
