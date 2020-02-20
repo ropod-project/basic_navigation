@@ -41,9 +41,8 @@ class OSMNavigation(object):
                                            self.bn_feedback_cb)
 
         # publishers
-        self._path_pub = rospy.Publisher('~path', Path, queue_size=1)
+        self._path_pub = rospy.Publisher('~topological_path', Path, queue_size=1)
         self._cancel_bn_pub = rospy.Publisher('~cancel_bn', Empty, queue_size=1)
-        self._bn_wp_pub = rospy.Publisher('~bn_goal', PoseStamped, queue_size=1)
         self._bn_path_pub = rospy.Publisher('~bn_goal_path', Path, queue_size=1)
 
         rospy.loginfo('Initialised')
@@ -212,19 +211,8 @@ class OSMNavigation(object):
             self._reset_state()
             return
 
-        path_msg = Path()
-        path_msg.header.frame_id = self.global_frame
-        path_msg.header.stamp = rospy.Time.now()
-
         self.path = []
-        for i in range(len(plan)):
-            pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-                                                               plan[i][0],
-                                                               plan[i][1],
-                                                               plan[i][2])
-            self.path.append(pose)
-
-        path_msg.poses = self.path
-
+        path_msg = get_path_msg_from_poses(plan, self.global_frame)
+        self.path = path_msg.poses
         self._path_pub.publish(path_msg)
         rospy.loginfo('Planned path successfully')
