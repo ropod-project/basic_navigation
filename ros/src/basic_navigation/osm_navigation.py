@@ -5,7 +5,6 @@ import time
 import math
 import rospy
 import traceback
-from OBL import OSMBridge, PathPlanner
 
 from std_msgs.msg import String, Empty
 from geometry_msgs.msg import PoseStamped, PointStamped, Point
@@ -21,19 +20,6 @@ class OSMNavigation(object):
     """Navigation using OSM map"""
 
     def __init__(self):
-        # OSM related ros params and variables
-        ref_latitude = rospy.get_param('~ref_latitude', None)
-        ref_longitude = rospy.get_param('~ref_longitude', None)
-        if ref_latitude is None or ref_longitude is None:
-            rospy.logfatal('Reference global origin not provided. Exiting.')
-            sys.exit(1)
-        self.osm_bridge = OSMBridge(global_origin=[ref_latitude, ref_longitude])
-
-        building = rospy.get_param('~building', 'BRSU')
-        self.floor_prefix = building + '_L'
-        self.path_planner = PathPlanner(self.osm_bridge)
-        self.path_planner.set_building(building)
-
         # ROS params
         self.global_frame = rospy.get_param('~global_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
@@ -43,7 +29,7 @@ class OSMNavigation(object):
         # class variables
         self.tf_listener = tf.TransformListener()
         self.topological_planner = TopologicalPlanner(network_file)
-        self.geometric_planner = GeometricPlanner()
+        self.geometric_planner = GeometricPlanner(tf_listener=self.tf_listener)
         self.path = None
         self.goal = None
         self.bn_reached_curr_wp = None
@@ -220,28 +206,25 @@ class OSMNavigation(object):
             return None
         rospy.loginfo('Current pos: ' + str(curr_pos))
     
-        plan = self.geometric_planner.plan(curr_pos[:2], self.goal[:2])
+        plan = self.geometric_planner.plan(curr_pos, self.goal)
         if plan is None or len(plan) == 0:
             rospy.logerr('Could not plan geometric plan.')
             self._reset_state()
             return
 
-        # path_msg = Path()
-        # path_msg.header.frame_id = self.global_frame
-        # path_msg.header.stamp = rospy.Time.now()
+        path_msg = Path()
+        path_msg.header.frame_id = self.global_frame
+        path_msg.header.stamp = rospy.Time.now()
 
-        # theta = 0.0
-        # self.path = []
-        # for i in range(len(plan)):
-        #     if i < len(plan)-1:
-        #         theta = math.atan2(plan[i+1].y - plan[i].y, plan[i+1].x - plan[i].x)
-        #     pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
-        #                                                        plan[i].x,
-        #                                                        plan[i].y,
-        #                                                        theta)
-        #     self.path.append(pose)
+        self.path = []
+        for i in range(len(plan)):
+            pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame,
+                                                               plan[i][0],
+                                                               plan[i][1],
+                                                               plan[i][2])
+            self.path.append(pose)
 
-        # path_msg.poses = self.path
+        path_msg.poses = self.path
 
-        # self._path_pub.publish(path_msg)
+        self._path_pub.publish(path_msg)
         rospy.loginfo('Planned path successfully')

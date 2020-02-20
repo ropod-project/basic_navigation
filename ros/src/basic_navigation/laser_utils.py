@@ -23,6 +23,7 @@ class LaserUtils(object):
         self.base_link_to_laser_offset = (0.2, 0.0) # TODO use tf?
         self.set_footprint_padding(0.1)
         self.cloud = None
+        self.debug = kwargs.get('debug', False)
 
         # publisher
         self.pc_pub = rospy.Publisher('~pc_debug', PointCloud2, queue_size=1)
@@ -31,7 +32,11 @@ class LaserUtils(object):
         # subscribers
         laser_sub = rospy.Subscriber('~laser', LaserScan, self.laser_cb)
 
-        rospy.sleep(0.2)
+        rospy.sleep(0.5)
+        if self.debug:
+            self.pub_debug_footprint()
+            rospy.sleep(0.2)
+
 
     def laser_cb(self, msg):
         self.cloud = self.laser_proj.projectLaser(msg, channel_options=LaserProjection.ChannelOption.NONE)
@@ -39,6 +44,8 @@ class LaserUtils(object):
 
     def is_safe_from_colliding_at(self, x=0.0, y=0.0, theta=0.0):
         footprint = self.get_footprint_at(x, y, theta)
+        if self.debug:
+            self.pub_debug_footprint(footprint)
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
         for p in points:
             if self.is_inside_polygon(p[0], p[1], footprint):
@@ -48,9 +55,8 @@ class LaserUtils(object):
     def get_footprint_at(self, x=0.0, y=0.0, theta=0.0):
         new_footprint = []
         for p in self.padded_footprint:
-            new_x = (math.cos(theta) * p.x) + (-math.sin(theta) * p.y)
-            new_y = (math.sin(theta) * p.x) + (math.cos(theta) * p.y)
-            new_footprint.append(Point(x=new_x+x, y=new_y+y))
+            rotated_point = Utils.get_rotated_point((p.x, p.y), theta)
+            new_footprint.append(Point(x=rotated_point[0]+x, y=rotated_point[1]+y))
         return new_footprint
 
     def get_collision_index(self, points):
@@ -68,6 +74,7 @@ class LaserUtils(object):
         polygon_msg.header.frame_id = self.robot_frame
         polygon_msg.polygon.points = footprint
         self.footprint_pub.publish(polygon_msg)
+        rospy.sleep(0.5)
 
     def set_footprint_padding(self, padding):
         if padding < 0.0:

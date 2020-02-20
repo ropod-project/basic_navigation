@@ -104,6 +104,20 @@ class Utils(object):
         return reverse_angle
 
     @staticmethod
+    def get_perpendicular_angle(angle):
+        """Compute the angle which is perpendicular to given angle and ensures that the 
+        returned angle is between pi and -pi
+        ASSUMPTION: angle is always between pi and -pi
+
+        :angle: float
+        :returns: float
+        """
+        perpendicular_angle = angle + math.pi/2
+        if perpendicular_angle > math.pi:
+            perpendicular_angle -= math.pi
+        return perpendicular_angle
+
+    @staticmethod
     def get_distance(delta_x, delta_y):
         """Compute cartesian distance given individual distance in x and y axis
 
@@ -170,7 +184,7 @@ class Utils(object):
         dist = 0.0
         for i in range(len(points)-1):
             dist += Utils.get_distance_between_points(points[i], points[i+1])
-        return max(int(dist)*3, 10)
+        return max(int(dist*2.0), 5)
 
     @staticmethod
     def clip(value, max_allowed=1.0, min_allowed=0.1):
@@ -299,3 +313,36 @@ class Utils(object):
             j = i
         return (counter % 2 == 1)
 
+    @staticmethod
+    def transform_pose(listener, input_pose, current_frame, target_frame):
+        """Wrapper on tf.TransformListener.transformPose to use pose in 2d (x, y, theta)
+
+        :listener: tf.TransformListener
+        :input_pose: tuple of 3 float
+        :current_frame: string
+        :target_frame: string
+        :returns: tuple of 3 float
+
+        """
+        pose = Utils.get_pose_stamped_from_frame_x_y_theta(current_frame, *input_pose)
+        try:
+            common_time = listener.getLatestCommonTime(current_frame, target_frame)
+            pose.header.stamp = common_time
+            transformed_pose = listener.transformPose(target_frame, pose)
+            return Utils.get_x_y_theta_from_pose(transformed_pose.pose)
+        except Exception as e:
+            rospy.logerr(str(e))
+            return None
+
+    @staticmethod
+    def get_rotated_point(point, angle):
+        """Rotate point with angle
+
+        :point: tuple (float, float)
+        :angle: float (between -pi and pi)
+        :returns: tuple (float, float)
+
+        """
+        x = (math.cos(angle) * point[0]) + (-math.sin(angle) * point[1])
+        y = (math.sin(angle) * point[0]) + (math.cos(angle) * point[1])
+        return (x, y)
