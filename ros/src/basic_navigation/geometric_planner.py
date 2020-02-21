@@ -106,18 +106,18 @@ class GeometricPlanner(object):
             control_points.append((point_2[0]+start[0], point_2[1]+start[1]))
         else: # use junction mode
             # get single control point
-            m1 = Utils.clip(math.tan(start[2]), 10000.0, -10000.0)
-            c1 = start[1] - (m1 * start[0])
-            m2 = Utils.clip(math.tan(goal[2]), 10000.0, -10000.0)
-            c2 = goal[1] - (m2 * goal[0])
-            cp_x = (c2-c1)/(m1-m2)
-            cp_y = (m1 * cp_x) + c1
-            control_points.append((cp_x, cp_y))
+            theta = goal[2]
+            new_goal = [goal[0]-start[0], goal[1]-start[1], theta]
+            rotated_new_goal = Utils.get_rotated_point(new_goal[:2], -theta)
+            rotated_point = (0.0, rotated_new_goal[1])
+            point = list(Utils.get_rotated_point(rotated_point, theta))
+            control_points.append((point[0]+start[0], point[1]+start[1]))
 
         control_points.insert(0, (start[0], start[1]))
         control_points.append((goal[0], goal[1]))
         n = Utils.calc_heuristic_n_from_points(control_points)
         curve_points = Utils.get_spline_curve(control_points, n=n)
+        # path = [(point[0], point[1], 0.0) for point in control_points]
         path = []
         for i in range(len(curve_points)):
             if i < len(curve_points)-1:
