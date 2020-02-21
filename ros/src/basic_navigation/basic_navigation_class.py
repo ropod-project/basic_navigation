@@ -63,6 +63,7 @@ class BasicNavigation(object):
 
         if curr_pos is None:
             rospy.logerr('Current pose is not available')
+            self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_NO_CURRENT_POSE))
             return
 
         curr_goal = Utils.get_x_y_theta_from_pose(self.plan[0].pose)
@@ -72,6 +73,7 @@ class BasicNavigation(object):
             angular_dist = Utils.get_shortest_angle(curr_goal[2], curr_pos[2])
             if abs(angular_dist) < self.goal_theta_tolerance:
                 rospy.loginfo('REACHED GOAL')
+                self._feedback_pub.publish(Feedback(status=Feedback.SUCCESS))
                 self._reset_state()
                 return
             else:
@@ -79,7 +81,10 @@ class BasicNavigation(object):
                 return
         if dist < self.waypoint_goal_tolerance and len(self.plan) > 1:
             rospy.loginfo('Reached waypoint')
-            old_wp = self.plan.pop(0)
+            reached_wp = self.plan.pop(0)
+            self._feedback_pub.publish(Feedback(status=Feedback.REACHED_WP,
+                                                reached_wp=reached_wp.pose,
+                                                remaining_path_length=len(self.plan)))
 
         heading = math.atan2(curr_goal[1]-curr_pos[1], curr_goal[0]-curr_pos[0])
         heading_diff = Utils.get_shortest_angle(heading, curr_pos[2])
@@ -116,7 +121,7 @@ class BasicNavigation(object):
 
         if collision_index == 0:
             rospy.logerr('Obstacle ahead. Current plan failed.')
-            # TODO send failure feedback
+            self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_OBSTACLES))
             self._reset_state()
             return
 
@@ -136,7 +141,7 @@ class BasicNavigation(object):
     def goal_cb(self, msg):
         if self.plan is not None:
             rospy.logwarn('Preempting previous goal. User requested another goal')
-            # TODO send preempt feedback
+            self._feedback_pub.publish(Feedback(status=Feedback.CANCELLED))
         self._reset_state()
         goal = Utils.get_x_y_theta_from_pose(msg.pose)
         rospy.loginfo('Received new goal')
@@ -149,12 +154,13 @@ class BasicNavigation(object):
         if self.global_frame != msg.header.frame_id:
             rospy.logwarn('Goal path has "' + msg.header.frame_id + '" frame. '\
                           + 'Expecting "' + self.global_frame + '". Ignoring path.')
-            # TODO pub feedback
+            self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
             return
 
         path = msg.poses
         if len(path) == 0:
             rospy.logwarn('Received empty goal path. Ignoring')
+            self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_EMPTY_PLAN))
             return
 
         first_pose = Utils.get_x_y_theta_from_pose(path[0].pose)
@@ -166,7 +172,7 @@ class BasicNavigation(object):
         if dist > self.goal_path_start_point_tolerance:
             if len(self.plan) == 0:
                 rospy.logwarn('Goal path first point is too far from robot. Ignoring path.')
-                # TODO pub feedback
+                self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
                 return
             curr_plan_last_pose = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
             plan_append_dist = Utils.get_distance_between_points(first_pose[:2], curr_plan_last_pose[:2])
@@ -177,9 +183,10 @@ class BasicNavigation(object):
                 return
             else:
                 rospy.logwarn('Goal path first point is too far from current plan end point. Ignoring.')
-                # TODO pub feedback
+                self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
                 return
 
+        rospy.loginfo('Replaced current plan')
         self.plan = path
         self._path_pub.publish(msg)
 
@@ -254,7 +261,6 @@ class BasicNavigation(object):
         self.max_linear_acc = max_linear_acc_per_second/control_rate
         self.future_pos_lookahead_time = param_dict.get('future_pos_lookahead_time', 3.0)
 
-
     def switch_mode_cb(self, msg):
         mode = msg.data
         if mode == 'lenient' or mode == 'strict':
@@ -269,7 +275,7 @@ class BasicNavigation(object):
 
     def cancel_current_goal_cb(self, msg):
         rospy.logwarn('PREEMPTING (cancelled goal)')
-        # TODO publish preempted feedback
+        self._feedback_pub.publish(Feedback(status=Feedback.CANCELLED))
         self._reset_state()
 
     def publish_zero_vel(self):

@@ -5,9 +5,8 @@
 
     <node pkg="basic_navigation" type="osm_navigation_node" name="osm_navigation"
           respawn="false" output="screen">
-        <remap from="~bn_feedback" to="/route_navigation/feedback" />
+        <remap from="~bn_feedback" to="/basic_navigation/feedback" />
         <remap from="~cancel_bn" to="/basic_navigation/cancel" />
-        <remap from="~bn_goal" to="/move_base_simple/goal" />
         <remap from="~bn_goal_path" to="/basic_navigation/goal_path" />
         <remap from="~laser" to="$(arg laser_topic)" />
 
