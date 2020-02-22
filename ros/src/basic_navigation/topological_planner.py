@@ -29,7 +29,7 @@ class TopologicalPlanner(object):
 
         :start: tuple of 2 float
         :goal: tuple of 2 float
-        :returns: list of Point or None
+        :returns: list of Node or None
 
         """
         start_node = self.get_nearest_topological_point(*start)
@@ -39,11 +39,11 @@ class TopologicalPlanner(object):
         if plan is None:
             return None
 
-        start_point = Point(x=start[0], y=start[1])
-        goal_point = Point(x=goal[0], y=goal[1])
+        start_point_node = Node(node_id=10000, x=start[0], y=start[1], area_name='', area_type='')
+        goal_point_node = Node(node_id=10001, x=goal[0], y=goal[1], area_name='', area_type='')
 
         if len(plan) == 1:
-            plan = [start_point, goal_point]
+            plan = [start_point_node, goal_point_node]
         else: # whether to keep first area and last area or not
             first_node = (plan[0].x, plan[0].y)
             second_node = (plan[1].x, plan[1].y)
@@ -57,8 +57,8 @@ class TopologicalPlanner(object):
             dist_2 = Utils.get_distance_between_points(last_node, last_second_node)
             if dist_1 < dist_2:
                 plan.pop()
-            plan.insert(0, start_point)
-            plan.append(goal_point)
+            plan.insert(0, start_point_node)
+            plan.append(goal_point_node)
         return plan
 
     def plan_path(self, start_node, goal_node, search_type='bfs'):
@@ -66,16 +66,16 @@ class TopologicalPlanner(object):
 
         :start_node: int
         :goal_node: int
-        :returns: list of Point
+        :returns: list of Node
 
         """
         topological_path = self.search(start_node, goal_node, search_type)
         if topological_path is None:
             return None
 
-        node_path = [self.nodes[node_id] for node_id in topological_path]
-        point_path = [Point(x=n.x, y=n.y) for n in node_path if n.area_type != 'junction_center']
-        return point_path
+        node_path_raw = [self.nodes[node_id] for node_id in topological_path]
+        node_path = [n for n in node_path_raw if n.area_type != 'junction_center']
+        return node_path
 
     def get_nearest_topological_point(self, x, y):
         """

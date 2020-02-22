@@ -38,12 +38,12 @@ class GeometricPlanner(object):
         :returns list of tuples (float, float, float)
 
         """
-        # if try_spline_first and Utils.get_distance_between_points(start[:2], goal[:2]) < 4.0 and abs(start[2]-goal[2]) > 0.2:
-        #     rospy.loginfo('Trying spline junction first')
-        #     path = self.plan_spline_path(start, goal, mode='junction')
-        #     self.path_debug_pub.publish(Utils.get_path_msg_from_poses(path, self.global_frame))
-        #     if self.is_path_safe(path)[0]:
-        #         return path
+        if try_spline_first and Utils.get_distance_between_points(start[:2], goal[:2]) < 4.0 and abs(start[2]-goal[2]) > 0.2:
+            rospy.loginfo('Trying spline junction first')
+            path = self.plan_spline_path(start, goal, mode='junction')
+            self.path_debug_pub.publish(Utils.get_path_msg_from_poses(path, self.global_frame))
+            if self.is_path_safe(path)[0]:
+                return path
 
         # first try straight line path
         straight_line_path = self.plan_straight_line_path(start, goal)

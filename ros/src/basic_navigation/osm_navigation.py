@@ -195,8 +195,9 @@ class OSMNavigation(object):
         for i in range(len(plan)):
             if i < len(plan)-1:
                 theta = math.atan2(plan[i+1].y - plan[i].y, plan[i+1].x - plan[i].x)
-            pose = (plan[i].x, plan[i].y, theta)
+            pose = [plan[i].x, plan[i].y, theta]
             pose_stamped = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame, *pose)
+            pose.append(plan[i].area_type)
             self.topological_path.append(pose)
             path_msg.poses.append(pose_stamped)
         self._path_pub.publish(path_msg)
@@ -221,8 +222,8 @@ class OSMNavigation(object):
             rospy.loginfo('Current pos: ' + str(curr_pos))
             start_pose = curr_pos
     
-        try_spline_first = self.geometric_path is not None
-        plan = self.geometric_planner.plan(start_pose, goal_pose, try_spline_first=try_spline_first)
+        try_spline_first = len(start_pose) > 3 and len(goal_pose) > 3 and start_pose[3] == 'junction' and goal_pose[3] == 'junction'
+        plan = self.geometric_planner.plan(start_pose[:3], goal_pose[:3], try_spline_first=try_spline_first)
         if plan is None or len(plan) == 0:
             rospy.logerr('Could not plan geometric plan.')
             self.recovery_manager.recover('plan', global_navigation_obj=self)
