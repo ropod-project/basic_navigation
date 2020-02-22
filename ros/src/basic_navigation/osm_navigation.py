@@ -128,7 +128,7 @@ class OSMNavigation(object):
         self._get_osm_path(goal)
         if self.topological_path is None:
             return
-        if len(self.topological_path) == 2:
+        if len(self.topological_path) == 1:
             self._bn_mode_pub.publish(String(data='lenient'))
         else:
             self._bn_mode_pub.publish(String(data='long_dist'))

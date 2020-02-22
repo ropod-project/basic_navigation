@@ -112,11 +112,9 @@ class BasicNavigation(object):
         theta_vel_raw = theta_error * self.p_theta
         theta_vel = Utils.clip(theta_vel_raw, self.max_theta_vel, self.min_theta_vel)
 
-        # TODO reduce linear vel when theta is high
-        future_vel_prop_raw = pos_error * self.p_linear
+        future_vel_prop_raw = (pos_error * self.p_linear) / (1.0 + abs(theta_vel) * self.c_theta)
         future_vel_prop = Utils.clip(future_vel_prop_raw, self.max_linear_vel, self.min_linear_vel)
 
-        # TODO handle backward motion
         num_of_points = 10
         future_poses = Utils.get_future_poses(future_vel_prop, theta_vel, num_of_points,
                                               self.future_pos_lookahead_time)
@@ -258,6 +256,7 @@ class BasicNavigation(object):
         # controller params
         self.p_theta_in_place = param_dict.get('p_theta_in_place', 5.0)
         self.p_theta = param_dict.get('p_theta', 1.0)
+        self.c_theta = param_dict.get('c_theta', 100.0)
         self.p_linear = param_dict.get('p_linear', 1.0)
         self.max_theta_vel = param_dict.get('max_theta_vel', 0.5)
         self.min_theta_vel = param_dict.get('min_theta_vel', 0.005)
@@ -270,9 +269,6 @@ class BasicNavigation(object):
 
     def switch_mode_cb(self, msg):
         mode = msg.data
-        print('\n\n')
-        print(mode)
-        print('\n\n')
         if mode in ['lenient', 'long_dist', 'strict']:
             param_dict = rospy.get_param('~' + mode)
             self.update_params(param_dict, mode)
