@@ -7,7 +7,7 @@ from basic_navigation.osm_navigation import OSMNavigation
 if __name__ == "__main__":
     rospy.init_node('osm_navigation')
     OSMN = OSMNavigation()
-    CONTROL_RATE = rospy.get_param('~control_rate', 1.0)
+    CONTROL_RATE = rospy.get_param('~control_rate', 2.0)
     RATE = rospy.Rate(CONTROL_RATE)
     rospy.on_shutdown(OSMN._reset_state)
     try:

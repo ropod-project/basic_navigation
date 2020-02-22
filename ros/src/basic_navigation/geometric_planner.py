@@ -5,28 +5,32 @@ import rospy
 
 from utils import Utils
 from laser_utils import LaserUtils
+from nav_msgs.msg import Path
 
 class GeometricPlanner(object):
 
     """Planner for short distance navigation using geometric sensor information"""
 
-    def __init__(self, tf_listener=None):
+    def __init__(self, tf_listener=None, debug=False):
         # ros params
         self.global_frame = rospy.get_param('~global_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
         self.dist_between_wp = rospy.get_param('~dist_between_wp', 1.0)
+        footprint_padding = rospy.get_param('~footprint_padding', 0.1)
 
         # class variables
         self.tf_listener = tf_listener
-        self.laser_utils = LaserUtils(debug=False)
+        self.laser_utils = LaserUtils(footprint_padding=footprint_padding, debug=False)
+
+        # publishers
+        if debug:
+            self.path_debug_pub = rospy.Publisher('~debug_poses', Path, queue_size=1)
 
         rospy.sleep(0.2)
 
-    def plan(self, start=(0.0, 0.0, 0.0), goal=(0.0, 0.0, 0.0)):
+    def plan(self, start=(0.0, 0.0, 0.0), goal=(0.0, 0.0, 0.0), try_spline_first=True):
         """
         ASSUMPTION: start is current robot position
-        ASSUMPTION: robot is more or less facing goal
-        ASSUMPTION: goal is more or less within laser range
         ASSUMPTION: start and goal are in global frame
 
         :start: tuple of 3 float
@@ -34,8 +38,13 @@ class GeometricPlanner(object):
         :returns list of tuples (float, float, float)
 
         """
-        # goal = (59.65438461303711, 30.995689392089844, 0.0)
-        # print(goal)
+        if try_spline_first and Utils.get_distance_between_points(start[:2], goal[:2]) < 5.0 and abs(start[2]-goal[2]) > 0.2:
+            rospy.loginfo('Trying spline junction first')
+            path = self.plan_spline_path(start, goal, mode='junction')
+            self.path_debug_pub.publish(Utils.get_path_msg_from_poses(path, self.global_frame))
+            if self.is_path_safe(path)[0]:
+                return path
+
         # first try straight line path
         straight_line_path = self.plan_straight_line_path(start, goal)
 
@@ -44,16 +53,26 @@ class GeometricPlanner(object):
         if straight_line_safe:
             return straight_line_path
 
+        rospy.logdebug('Straight was not safe. Failed at '+ str(collision_index))
+
         # then try sampling at collision point and try path via a valid sample
         collision_pose = straight_line_path[collision_index]
         theta = math.atan2(goal[1] - start[1], goal[0] - start[0])
         perpendicular_angle = Utils.get_perpendicular_angle(theta)
-        samples = self.generate_valid_samples_along_line(start, collision_pose,
-                                                         perpendicular_angle)
+
+        for range_dist in range(1, 4):
+            samples = self.generate_valid_samples_along_line(start, collision_pose,
+                                                             perpendicular_angle,
+                                                             lower_range=-float(range_dist),
+                                                             higher_range=float(range_dist))
+            if len(samples) > 0:
+                break
+
         if len(samples) == 0:
-            return None # TODO can increase lower and higher range for generating samples
+            return None
 
         samples.sort(key=lambda sample: Utils.get_distance_between_points(collision_pose[:2], sample[:2]))
+        self.path_debug_pub.publish(Utils.get_path_msg_from_poses(samples, self.global_frame))
 
         safe_wp_index = 1
         safe_path_found = False
@@ -65,14 +84,16 @@ class GeometricPlanner(object):
                 safe_wp = samples[0]
                 last_chance = True
             first_half_path = self.plan_spline_path(start, safe_wp, mode='overtake')
-            second_half_path = self.plan_spline_path(safe_wp, goal, mode='overtake')
-            if not self.is_path_safe(second_half_path):
-                second_half_path = self.plan_straight_line_path(safe_wp, goal)
+            second_half_path = self.plan_straight_line_path(safe_wp, goal)
+            if not self.is_path_safe(second_half_path)[0]:
+                second_half_path = self.plan_spline_path(safe_wp, goal, mode='overtake')
             path = first_half_path
             path.extend(second_half_path)
-            safe_path_found = self.is_path_safe(path)
-            if not safe_path_found and last_chance:
-                return None
+            safe_path_found, _ = self.is_path_safe(path)
+            if not safe_path_found:
+                safe_wp_index += 1
+                if last_chance:
+                    return None
         return path
 
     def plan_straight_line_path(self, start, goal):

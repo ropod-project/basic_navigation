@@ -1,7 +1,6 @@
 from __future__ import print_function
 
 import math
-import copy
 import rospy
 import sensor_msgs.point_cloud2 as pc2
 from laser_geometry import LaserProjection
@@ -21,7 +20,8 @@ class LaserUtils(object):
         self.laser_proj = LaserProjection()
         self.footprint = [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]] # TODO use rosparam
         self.base_link_to_laser_offset = (0.2, 0.0) # TODO use tf?
-        self.set_footprint_padding(0.1)
+        footprint_padding = kwargs.get('footprint_padding', 0.1)
+        self.set_footprint_padding(footprint_padding)
         self.cloud = None
         self.debug = kwargs.get('debug', False)
 
@@ -105,3 +105,8 @@ class LaserUtils(object):
         return Utils.ray_tracing_algorithm(xPoints, yPoints,
                                            x+self.base_link_to_laser_offset[0],
                                            y+self.base_link_to_laser_offset[1])
+
+    def get_recovery_direction(self):
+        points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
+        closest_point = min(points, key=lambda point: Utils.get_distance(point[0], point[1]))
+        return math.atan2(closest_point[1], closest_point[0])

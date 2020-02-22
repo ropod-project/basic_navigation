@@ -74,7 +74,7 @@ class TopologicalPlanner(object):
             return None
 
         node_path = [self.nodes[node_id] for node_id in topological_path]
-        point_path = [Point(x=n.x, y=n.y) for n in node_path]
+        point_path = [Point(x=n.x, y=n.y) for n in node_path if n.area_type != 'junction_center']
         return point_path
 
     def get_nearest_topological_point(self, x, y):

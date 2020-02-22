@@ -28,11 +28,11 @@ class BasicNavigation(object):
         self.current_vel = 0.0
 
         self._tf_listener = tf.TransformListener()
-        self.laser_utils = LaserUtils(debug=True)
+        self.laser_utils = LaserUtils(debug=False)
 
-        self.default_param_dict_name = rospy.get_param('~default_param_dict_name', '~lenient')
-        param_dict = rospy.get_param(self.default_param_dict_name)
-        self.update_params(param_dict)
+        self.default_param_dict_name = rospy.get_param('~default_param_dict_name', 'lenient')
+        param_dict = rospy.get_param('~' + self.default_param_dict_name)
+        self.update_params(param_dict, self.default_param_dict_name)
 
 
         # Publishers
@@ -80,7 +80,7 @@ class BasicNavigation(object):
                 self._rotate_in_place(theta_error=angular_dist)
                 return
         if dist < self.waypoint_goal_tolerance and len(self.plan) > 1:
-            rospy.loginfo('Reached waypoint')
+            rospy.logdebug('Reached waypoint')
             reached_wp = self.plan.pop(0)
             self._feedback_pub.publish(Feedback(status=Feedback.REACHED_WP,
                                                 reached_wp=reached_wp.pose,
@@ -99,7 +99,9 @@ class BasicNavigation(object):
         if abs(heading_diff) > self.heading_tolerance:
             self._rotate_in_place(theta_error=heading_diff)
         else:
-            self._move_forward(pos_error=dist, theta_error=heading_diff)
+            final_goal = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
+            total_dist = Utils.get_distance_between_points(curr_pos[:2], final_goal[:2])
+            self._move_forward(pos_error=total_dist, theta_error=heading_diff)
 
     def _rotate_in_place(self, theta_error=1.0):
         theta_vel_raw = theta_error * self.p_theta_in_place
@@ -114,10 +116,18 @@ class BasicNavigation(object):
         future_vel_prop_raw = pos_error * self.p_linear
         future_vel_prop = Utils.clip(future_vel_prop_raw, self.max_linear_vel, self.min_linear_vel)
 
+        # TODO handle backward motion
         num_of_points = 10
         future_poses = Utils.get_future_poses(future_vel_prop, theta_vel, num_of_points,
                                               self.future_pos_lookahead_time)
-        collision_index = self.laser_utils.get_collision_index(future_poses)
+        future_poses_with_safety = [list(pose) for pose in future_poses]
+        for pose in future_poses_with_safety:
+            if self.moving_backward:
+                pose[0] *= -1
+                pose[0] -= self.forward_safety_dist
+            else:
+                pose[0] += self.forward_safety_dist
+        collision_index = self.laser_utils.get_collision_index(future_poses_with_safety)
 
         if collision_index == 0:
             rospy.logerr('Obstacle ahead. Current plan failed.')
@@ -133,10 +143,8 @@ class BasicNavigation(object):
 
         if self.moving_backward:
             x_vel *= -1
-            for p in future_poses:
-                p[0] *= -1
         self._cmd_vel_pub.publish(Utils.get_twist(x=x_vel, y=0.0, theta=theta_vel))
-        self._traj_pub.publish(Utils.get_path_msg_from_poses(future_poses, self.robot_frame))
+        self._traj_pub.publish(Utils.get_path_msg_from_poses(future_poses_with_safety, self.robot_frame))
 
     def goal_cb(self, msg):
         if self.plan is not None:
@@ -148,7 +156,7 @@ class BasicNavigation(object):
         rospy.loginfo(goal)
         self._get_straight_line_plan(goal)
         param_dict = rospy.get_param('~strict')
-        self.update_params(param_dict)
+        self.update_params(param_dict, 'strict')
 
     def path_cb(self, msg):
         if self.global_frame != msg.header.frame_id:
@@ -163,32 +171,31 @@ class BasicNavigation(object):
             self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_EMPTY_PLAN))
             return
 
-        first_pose = Utils.get_x_y_theta_from_pose(path[0].pose)
         curr_pos = self.get_current_position_from_tf()
         if curr_pos is None:
             rospy.logerr('Could not get current position. Ignoring path.')
             return 
-        dist = Utils.get_distance_between_points(first_pose[:2], curr_pos[:2])
-        if dist > self.goal_path_start_point_tolerance:
-            if len(self.plan) == 0:
+
+        first_pose = Utils.get_x_y_theta_from_pose(path[0].pose)
+        if self.plan is None:
+            dist = Utils.get_distance_between_points(first_pose[:2], curr_pos[:2])
+            if dist > self.goal_path_start_point_tolerance:
                 rospy.logwarn('Goal path first point is too far from robot. Ignoring path.')
                 self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
-                return
+            else:
+                rospy.loginfo('Initialising/Replacing current plan')
+                self.plan = path
+                self._path_pub.publish(msg)
+        else:
             curr_plan_last_pose = Utils.get_x_y_theta_from_pose(self.plan[-1].pose)
             plan_append_dist = Utils.get_distance_between_points(first_pose[:2], curr_plan_last_pose[:2])
-            if plan_append_dist < self.goal_path_start_point_tolerance:
+            if plan_append_dist > self.goal_path_start_point_tolerance:
+                rospy.logwarn('Goal path first point is too far from current plan end point. Ignoring.')
+                self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
+            else:
                 rospy.loginfo('Appending to current plan')
                 self.plan.extend(path)
                 self._path_pub.publish(Path(header=msg.header, poses=self.plan))
-                return
-            else:
-                rospy.logwarn('Goal path first point is too far from current plan end point. Ignoring.')
-                self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_INVALID_PLAN))
-                return
-
-        rospy.loginfo('Replaced current plan')
-        self.plan = path
-        self._path_pub.publish(msg)
 
     def odom_cb(self, msg):
         self.current_vel = msg.twist.twist.linear.x
@@ -230,13 +237,12 @@ class BasicNavigation(object):
         self.reached_goal_once = False
         self.moving_backward = False
         self.retry_attempts = 0
-        param_dict = rospy.get_param(self.default_param_dict_name)
-        self.update_params(param_dict)
+        param_dict = rospy.get_param('~' + self.default_param_dict_name)
+        self.update_params(param_dict, self.default_param_dict_name)
 
-    def update_params(self, param_dict):
-        rospy.loginfo('Updating params')
+    def update_params(self, param_dict, param_name=''):
+        rospy.loginfo('Updating params to ' + param_name)
         self.allow_backward_motion = param_dict.get('allow_backward_motion', False)
-        self.num_of_retries = param_dict.get('num_of_retries', 3)
         footprint_padding = param_dict.get('footprint_padding', 0.1)
         self.laser_utils.set_footprint_padding(footprint_padding)
 
@@ -245,8 +251,9 @@ class BasicNavigation(object):
         self.goal_dist_tolerance = param_dict.get('goal_dist_tolerance', 0.1)
         self.goal_theta_tolerance = param_dict.get('goal_theta_tolerance', 0.1)
         self.waypoint_goal_tolerance = param_dict.get('waypoint_goal_tolerance', 0.3)
-        self.latch_xy_goal = rospy.get_param('~latch_xy_goal', True)
-        self.goal_path_start_point_tolerance = rospy.get_param('~goal_path_start_point_tolerance', 1.0)
+        self.forward_safety_dist = param_dict.get('forward_safety_dist', 0.1)
+        self.latch_xy_goal = param_dict.get('latch_xy_goal', True)
+        self.goal_path_start_point_tolerance = param_dict.get('goal_path_start_point_tolerance', 1.0)
 
         # controller params
         self.p_theta_in_place = param_dict.get('p_theta_in_place', 5.0)
@@ -263,15 +270,18 @@ class BasicNavigation(object):
 
     def switch_mode_cb(self, msg):
         mode = msg.data
-        if mode == 'lenient' or mode == 'strict':
+        print('\n\n')
+        print(mode)
+        print('\n\n')
+        if mode in ['lenient', 'long_dist', 'strict']:
             param_dict = rospy.get_param('~' + mode)
-            self.update_params(param_dict)
-        elif mode == 'long_dist':
-            param_dict = rospy.get_param('~lenient')
-            self.update_params(param_dict)
-            self.allow_backward_motion = False
+            self.update_params(param_dict, mode)
         elif mode == 'cart':
             pass # TODO
+        else:
+            print('unknown mode')
+            param_dict = rospy.get_param('~' + self.default_param_dict_name)
+            self.update_params(param_dict, self.default_param_dict_name)
 
     def cancel_current_goal_cb(self, msg):
         rospy.logwarn('PREEMPTING (cancelled goal)')

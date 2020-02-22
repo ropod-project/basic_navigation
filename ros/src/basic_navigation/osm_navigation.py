@@ -14,6 +14,7 @@ from basic_navigation.msg import BasicNavigationFeedback as Feedback
 from utils import Utils
 from topological_planner import TopologicalPlanner
 from geometric_planner import GeometricPlanner
+from recovery_manager import RecoveryManager
 
 class OSMNavigation(object):
 
@@ -31,7 +32,8 @@ class OSMNavigation(object):
         # class variables
         self.tf_listener = tf.TransformListener()
         self.topological_planner = TopologicalPlanner(network_file)
-        self.geometric_planner = GeometricPlanner(tf_listener=self.tf_listener)
+        self.geometric_planner = GeometricPlanner(tf_listener=self.tf_listener, debug=True)
+        self.recovery_manager = RecoveryManager()
         self.topological_path = None
         self.geometric_path = None
         self.plan_next_geometric_path = False
@@ -46,7 +48,7 @@ class OSMNavigation(object):
         self._path_pub = rospy.Publisher('~topological_path', Path, queue_size=1)
         self._cancel_bn_pub = rospy.Publisher('~cancel_bn', Empty, queue_size=1)
         self._bn_path_pub = rospy.Publisher('~bn_goal_path', Path, queue_size=1)
-        self._bn_mode_pub = rospy.Publisher('~bn_mode_path', String, queue_size=1)
+        self._bn_mode_pub = rospy.Publisher('~bn_mode', String, queue_size=1)
 
         rospy.loginfo('Initialised')
 
@@ -68,8 +70,20 @@ class OSMNavigation(object):
             if len(self.topological_path) != 0:
                 geometric_path = self._get_geometric_path(start_pose=curr_goal,
                                                           goal_pose=self.topological_path[0])
-                self.geometric_path.extend(geometric_path)
+                if geometric_path is not None:
+                    self.geometric_path.extend(geometric_path)
+                else:
+                    self.geometric_path = None
             return
+
+        geometric_x_y_theta_path = [Utils.get_x_y_theta_from_pose(pose.pose) for pose in self.geometric_path]
+        safe, collision_index = self.geometric_planner.is_path_safe(geometric_x_y_theta_path)
+        if not safe and 0 <= collision_index < 3:
+            rospy.logwarn('Path not safe.')
+            self.recovery_manager.recover('obstacle', global_navigation_obj=self)
+        elif collision_index == -1:
+            rospy.logdebug('Path safe')
+            self.recovery_manager.reset(self)
 
     def feedback_cb(self, msg):
         if self.topological_path is None:
@@ -79,36 +93,30 @@ class OSMNavigation(object):
                 print('\n\nREACHED GOAL\n\n')
                 self.topological_path = None
             else:
-                rospy.logerr('OOPS! This should never happen!') # TODO call recovery manager?
-                self._reset_state()
+                self.plan_next_geometric_path = True
         elif msg.status == Feedback.REACHED_WP:
             wp = Utils.get_x_y_theta_from_pose(msg.reached_wp)
+            if self.geometric_path is None:
+                return
             geometric_path_wp = Utils.get_x_y_theta_from_pose(self.geometric_path[0].pose)
             dist = Utils.get_distance_between_points(wp[:2], geometric_path_wp)
             if dist < self.geometric_wp_goal_tolerance and msg.remaining_path_length == len(self.geometric_path)-1: # verify
-                rospy.loginfo('In sync with Basic navigation')
+                rospy.logdebug('In sync with Basic navigation')
                 self.geometric_path.pop(0)
             else:
-                rospy.logerr('Lost sync with Basic navigation. Aborting') # TODO call recovery manager?
-                print('dist', dist)
-                print('msg remaining path length', msg.remaining_path_length)
-                print('osm beleived remaining path length', len(self.geometric_path))
-                print('osm wp', geometric_path_wp)
-                print('msg wp', wp)
-                self._reset_state()
+                rospy.logwarn('Lost sync with Basic navigation.')
+                self.recovery_manager.recover('sync', global_navigation_obj=self, feedback_msg=msg)
             self.plan_next_geometric_path = msg.remaining_path_length < self.plan_next_geometric_path_tolerance
         elif msg.status == Feedback.FAILURE_OBSTACLES:
-            pass # TODO call recovery manager
+            rospy.logwarn('Basic navigation failed due to obstacles.')
+            self.recovery_manager.recover('obstacle', global_navigation_obj=self)
         elif msg.status == Feedback.FAILURE_EMPTY_PLAN or msg.status == Feedback.FAILURE_INVALID_PLAN:
+            rospy.logwarn('Basic navigation received empty or invalid plan.')
+            self._cancel_bn_pub.publish(Empty())
             self.geometric_path = None
         elif msg.status == Feedback.FAILURE_NO_CURRENT_POSE:
             rospy.logerr('Basic navigation could not find current pose')
-            # TODO call recovery manager
-        elif msg.status == Feedback.CANCELLED:
-            rospy.logerr('Basic navigation was cancelled')
-            rospy.logerr('CANCELLING')
-            self.topological_path = None
-            self._reset_state()
+            self.recovery_manager._wait_recovery()
 
     def goal_cb(self, msg):
         if self.topological_path is not None:
@@ -118,11 +126,12 @@ class OSMNavigation(object):
         rospy.loginfo('Received new goal')
         rospy.loginfo(goal)
         self._get_osm_path(goal)
+        if self.topological_path is None:
+            return
         if len(self.topological_path) == 2:
             self._bn_mode_pub.publish(String(data='lenient'))
         else:
             self._bn_mode_pub.publish(String(data='long_dist'))
-        print('len of topological plan', len(self.topological_path))
 
     def cancel_current_goal(self, msg):
         """Cancel current goal by sending a cancel signal to basic navigation
@@ -137,6 +146,7 @@ class OSMNavigation(object):
     def _reset_state(self):
         if self.topological_path is not None:
             self._cancel_bn_pub.publish(Empty())
+        self.recovery_manager.reset(self)
         self.topological_path = None
         self.geometric_path = None
         self.plan_next_geometric_path = False
@@ -211,10 +221,11 @@ class OSMNavigation(object):
             rospy.loginfo('Current pos: ' + str(curr_pos))
             start_pose = curr_pos
     
-        plan = self.geometric_planner.plan(start_pose, goal_pose)
+        try_spline_first = self.geometric_path is not None
+        plan = self.geometric_planner.plan(start_pose, goal_pose, try_spline_first=try_spline_first)
         if plan is None or len(plan) == 0:
             rospy.logerr('Could not plan geometric plan.')
-            # TODO call recovery manager
+            self.recovery_manager.recover('plan', global_navigation_obj=self)
             return None
 
         path_msg = Utils.get_path_msg_from_poses(plan, self.global_frame)
