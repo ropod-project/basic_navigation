@@ -1,6 +1,7 @@
 <?xml version='1.0'?>
 <launch>
 
+    <!-- <arg name="laser_topic" default="/projected_scan"/> -->
     <arg name="laser_topic" default="/load/scan"/>
     <arg name="cmd_vel_topic" default="/load/cmd_vel"/>
 
