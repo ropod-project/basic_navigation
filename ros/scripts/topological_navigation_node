@@ -5,7 +5,7 @@ import traceback
 from basic_navigation.osm_navigation import OSMNavigation
 
 if __name__ == "__main__":
-    rospy.init_node('osm_navigation')
+    rospy.init_node('topological_navigation')
     OSMN = OSMNavigation()
     CONTROL_RATE = rospy.get_param('~control_rate', 2.0)
     RATE = rospy.Rate(CONTROL_RATE)

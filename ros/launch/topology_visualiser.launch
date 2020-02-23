@@ -2,7 +2,7 @@
 <launch>
 
     <arg name="map_file" default="$(find ropod_navigation_test)/../occupancy_grids/brsu/brsu-c-floor0_osm/map.yaml" />
-    <arg name="network_file" default="$(find basic_navigation)/ros/config/osm_network.yaml"/>
+    <arg name="network_file" default="$(find basic_navigation)/ros/config/brsu_network.yaml"/>
 
     <node pkg="basic_navigation" type="topology_visualiser_node" name="topology_visualiser"
           respawn="false" output="screen">

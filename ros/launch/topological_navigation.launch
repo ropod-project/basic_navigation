@@ -5,7 +5,7 @@
     <arg name="laser_topic" default="/load/scan"/>
     <arg name="cmd_vel_topic" default="/load/cmd_vel"/>
 
-    <node pkg="basic_navigation" type="osm_navigation_node" name="osm_navigation"
+    <node pkg="basic_navigation" type="topological_navigation_node" name="topological_navigation"
           respawn="false" output="screen">
         <remap from="~bn_feedback" to="/basic_navigation/feedback" />
         <remap from="~bn_mode" to="/basic_navigation/switch_mode" />
@@ -14,7 +14,7 @@
         <remap from="~laser" to="$(arg laser_topic)" />
         <remap from="~cmd_vel" to="$(arg cmd_vel_topic)" />
 
-        <param name="network_file" value="$(find basic_navigation)/ros/config/osm_network.yaml"/>
+        <param name="network_file" value="$(find basic_navigation)/ros/config/brsu_network.yaml"/>
         <param name="wp_goal_tolerance" type="double" value="1.5"/>
         <param name="global_frame" type="string" value="map"/>
         <param name="robot_frame" type="string" value="load/base_link"/>
