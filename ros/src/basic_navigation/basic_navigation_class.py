@@ -30,7 +30,7 @@ class BasicNavigation(object):
         self._tf_listener = tf.TransformListener()
         self.laser_utils = LaserUtils(debug=False)
 
-        self.default_param_dict_name = rospy.get_param('~default_param_dict_name', 'lenient')
+        self.default_param_dict_name = rospy.get_param('~default_param_dict_name', 'strict')
         param_dict = rospy.get_param('~' + self.default_param_dict_name)
         self.update_params(param_dict, self.default_param_dict_name)
 
@@ -269,7 +269,7 @@ class BasicNavigation(object):
 
     def switch_mode_cb(self, msg):
         mode = msg.data
-        if mode in ['lenient', 'long_dist', 'strict']:
+        if mode in ['long_dist', 'strict']:
             param_dict = rospy.get_param('~' + mode)
             self.update_params(param_dict, mode)
         elif mode == 'cart':

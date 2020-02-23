@@ -16,6 +16,7 @@ class GeometricPlanner(object):
         self.global_frame = rospy.get_param('~global_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
         self.dist_between_wp = rospy.get_param('~dist_between_wp', 1.0)
+        self.connector_length = rospy.get_param('~connector_length', 0.5)
         footprint_padding = rospy.get_param('~footprint_padding', 0.1)
 
         # class variables
@@ -28,7 +29,7 @@ class GeometricPlanner(object):
 
         rospy.sleep(0.2)
 
-    def plan(self, start=(0.0, 0.0, 0.0), goal=(0.0, 0.0, 0.0), try_spline_first=True):
+    def plan(self, start=(0.0, 0.0, 0.0), goal=(0.0, 0.0, 0.0), try_spline_first=False):
         """
         ASSUMPTION: start is current robot position
         ASSUMPTION: start and goal are in global frame
@@ -49,18 +50,19 @@ class GeometricPlanner(object):
         straight_line_path = self.plan_straight_line_path(start, goal)
 
         straight_line_safe, collision_index = self.is_path_safe(straight_line_path)
+        print(collision_index)
 
         if straight_line_safe:
             return straight_line_path
 
-        rospy.logdebug('Straight was not safe. Failed at '+ str(collision_index))
+        rospy.loginfo('Straight was not safe. Failed at '+ str(collision_index))
 
         # then try sampling at collision point and try path via a valid sample
         collision_pose = straight_line_path[collision_index]
         theta = math.atan2(goal[1] - start[1], goal[0] - start[0])
         perpendicular_angle = Utils.get_perpendicular_angle(theta)
 
-        for range_dist in range(1, 4):
+        for range_dist in range(2, 4):
             samples = self.generate_valid_samples_along_line(start, collision_pose,
                                                              perpendicular_angle,
                                                              lower_range=-float(range_dist),
@@ -83,10 +85,12 @@ class GeometricPlanner(object):
             else:
                 safe_wp = samples[0]
                 last_chance = True
+            x = (self.connector_length * math.cos(theta)) + safe_wp[0]
+            y = (self.connector_length * math.sin(theta)) + safe_wp[1]
+            safe_wp_2 = [x, y, theta]
+            rospy.loginfo(safe_wp_index)
             first_half_path = self.plan_spline_path(start, safe_wp, mode='overtake')
-            second_half_path = self.plan_straight_line_path(safe_wp, goal)
-            if not self.is_path_safe(second_half_path)[0]:
-                second_half_path = self.plan_spline_path(safe_wp, goal, mode='overtake')
+            second_half_path = self.plan_spline_path(safe_wp_2, goal, mode='overtake')
             path = first_half_path
             path.extend(second_half_path)
             safe_path_found, _ = self.is_path_safe(path)
@@ -94,6 +98,7 @@ class GeometricPlanner(object):
                 safe_wp_index += 1
                 if last_chance:
                     return None
+            print(path)
         return path
 
     def plan_straight_line_path(self, start, goal):

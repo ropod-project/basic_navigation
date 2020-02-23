@@ -37,7 +37,7 @@ class RecoveryManager(object):
             global_navigation_obj.geometric_planner.laser_utils.set_footprint_padding(self.default_footprint_padding)
             self.move_away_recovery_counter = 0
             if global_navigation_obj.topological_path is not None:
-                param_name = 'lenient' if  len(global_navigation_obj.topological_path) == 2 else 'long_dist'
+                param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
                 global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
         
     def recover(self, failure_type, **kwargs):
@@ -135,7 +135,7 @@ class RecoveryManager(object):
         global_navigation_obj = kwargs.get('global_navigation_obj')
         global_navigation_obj.geometric_planner.laser_utils.set_footprint_padding(self.default_footprint_padding)
         global_navigation_obj.geometric_path = None
-        param_name = 'lenient' if  len(global_navigation_obj.topological_path) == 2 else 'long_dist'
+        param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
         global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
 
     def _failure(self, **kwargs):

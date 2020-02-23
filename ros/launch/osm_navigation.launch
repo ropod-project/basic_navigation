@@ -19,6 +19,7 @@
         <param name="global_frame" type="string" value="map"/>
         <param name="robot_frame" type="string" value="load/base_link"/>
         <param name="footprint_padding" type="double" value="0.1"/>
+        <param name="dist_between_wp" type="double" value="0.5"/>
 
         <!-- recovery params -->
         <param name="recovery_wait_duration" type="double" value="2.0"/>

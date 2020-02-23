@@ -60,7 +60,12 @@ class OSMNavigation(object):
             return
 
         if self.geometric_path is None:
-            self.geometric_path = self._get_geometric_path(goal_pose=self.topological_path[0])
+            if len(self.topological_path) == 0:
+                print('\n\nREACHED GOAL (more or less)\n\n')
+                self.topological_path = None
+                self._reset_state()
+            else:
+                self.geometric_path = self._get_geometric_path(goal_pose=self.topological_path[0])
             return
 
         if self.plan_next_geometric_path:
@@ -92,6 +97,7 @@ class OSMNavigation(object):
             if len(self.topological_path) == 0:
                 print('\n\nREACHED GOAL\n\n')
                 self.topological_path = None
+                self._reset_state()
             else:
                 self.plan_next_geometric_path = True
         elif msg.status == Feedback.REACHED_WP:
@@ -106,7 +112,7 @@ class OSMNavigation(object):
             else:
                 rospy.logwarn('Lost sync with Basic navigation.')
                 self.recovery_manager.recover('sync', global_navigation_obj=self, feedback_msg=msg)
-            self.plan_next_geometric_path = msg.remaining_path_length < self.plan_next_geometric_path_tolerance
+            self.plan_next_geometric_path = msg.remaining_path_length < self.plan_next_geometric_path_tolerance and len(self.topological_path) > 0
         elif msg.status == Feedback.FAILURE_OBSTACLES:
             rospy.logwarn('Basic navigation failed due to obstacles.')
             self.recovery_manager.recover('obstacle', global_navigation_obj=self)
@@ -128,10 +134,8 @@ class OSMNavigation(object):
         self._get_osm_path(goal)
         if self.topological_path is None:
             return
-        if len(self.topological_path) == 1:
-            self._bn_mode_pub.publish(String(data='lenient'))
-        else:
-            self._bn_mode_pub.publish(String(data='long_dist'))
+        param_name = 'strict' if len(self.topological_path) == 1 else 'long_dist'
+        self._bn_mode_pub.publish(String(data=param_name))
 
     def cancel_current_goal(self, msg):
         """Cancel current goal by sending a cancel signal to basic navigation

@@ -8,7 +8,7 @@ nodes:
   area_type: room
   id: 1341
   x: 59.43
-  y: 28.7
+  y: 25.7
 - area_name: BRSU_C_L0_RoomC025
   area_type: room
   id: 1342
@@ -27,7 +27,7 @@ nodes:
 - area_name: BRSU_C_L0_C8_2
   area_type: junction
   id: 13542
-  x: 51.5
+  x: 51.7
   y: 33.6
 - area_name: BRSU_C_L0_C8_3
   area_type: junction
@@ -282,8 +282,8 @@ nodes:
 - area_name: BRSU_C_L0_C11
   area_type: corridor
   id: 1351
-  x: 50.93
-  y: 37.32
+  x: 51.7
+  y: 34.8
 - area_name: BRSU_C_L0_C12
   area_type: corridor
   id: 1350
