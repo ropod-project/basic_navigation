@@ -61,7 +61,7 @@ class TopologicalPlanner(object):
             plan.append(goal_point_node)
         return plan
 
-    def plan_path(self, start_node, goal_node, search_type='bfs'):
+    def plan_path(self, start_node, goal_node):
         """Plan a path from start node to goal
 
         :start_node: int
@@ -69,17 +69,11 @@ class TopologicalPlanner(object):
         :returns: list of Node
 
         """
-        topological_path = self.search(start_node, goal_node, search_type)
+        topological_path = self.search(start_node, goal_node)
         if topological_path is None:
             return None
 
-        node_path_raw = [self.nodes[node_id] for node_id in topological_path]
-        node_path = []
-        for i in range(len(node_path_raw)):
-            if node_path_raw[i].area_type == 'junction_center' and i < len(node_path_raw)-1:
-                continue
-            else:
-                node_path.append(node_path_raw[i])
+        node_path = [self.nodes[node_id] for node_id in topological_path]
         return node_path
 
     def get_nearest_topological_point(self, x, y):
@@ -100,15 +94,12 @@ class TopologicalPlanner(object):
                 nearest_node = node.id
         return nearest_node
 
-    def search(self, start, goal, search_type):
-        fringe = [start]
+    def search(self, start, goal):
+        fringe = [(start, self.get_distance_between_nodes(start, goal))]
         visited = []
         parent = {}
         while len(fringe) > 0:
-            if search_type == 'bfs':
-                curr_node = fringe.pop(0)
-            else:
-                curr_node = fringe.pop()
+            curr_node, _ = fringe.pop(fringe.index(min(fringe, key=lambda n: n[1])))
             if curr_node == goal:
                 topological_path = [goal]
                 while topological_path[-1] in parent:
@@ -118,5 +109,10 @@ class TopologicalPlanner(object):
             visited.append(curr_node)
             for n in self.neighbours[curr_node]:
                 if n not in visited:
-                    fringe.append(n)
+                    fringe.append((n, self.get_distance_between_nodes(n, goal)))
                     parent[n] = curr_node
+
+    def get_distance_between_nodes(self, n1, n2):
+        point1 = (self.nodes[n1].x, self.nodes[n1].y)
+        point2 = (self.nodes[n2].x, self.nodes[n2].y)
+        return Utils.get_distance_between_points(point1, point2)
