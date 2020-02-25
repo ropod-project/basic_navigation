@@ -76,7 +76,10 @@ class TopologicalNavigation(object):
                 geometric_path = self._get_geometric_path(start_pose=curr_goal,
                                                           goal_pose=self.topological_path[0])
                 if geometric_path is not None:
-                    self.geometric_path.extend(geometric_path)
+                    if self.geometric_path is not None:
+                        self.geometric_path.extend(geometric_path)
+                    else:
+                        self.geometric_path = geometric_path
                 else:
                     self.geometric_path = None
             return
