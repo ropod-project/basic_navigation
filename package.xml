@@ -3,7 +3,7 @@
   <name>basic_navigation</name>
   <version>0.1.0</version>
   <description>Navigation to move a mobile robot in a straight line path or using
-  a global planner's path. </description>
+  a topological planner's path. </description>
 
   <maintainer email="dharmingeo@gmail.com">Dharmin B.</maintainer>
 
