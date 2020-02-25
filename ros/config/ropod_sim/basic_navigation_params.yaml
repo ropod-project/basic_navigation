@@ -1,6 +1,8 @@
 global_frame: 'map'
 robot_frame: 'load/base_link'
 control_rate: 5.0
+laser_frame: 'load/front_laser_link'
+footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
 
 long_dist:
     allow_backward_motion: False
@@ -36,7 +38,7 @@ strict:
     latch_xy_goal: True
     waypoint_goal_tolerance: 0.3
     goal_path_start_point_tolerance: 1.0
-    forward_safety_dist: 0.0
+    forward_safety_dist: 0.1
     footprint_padding: 0.02
 
     # controller params

@@ -16,9 +16,9 @@ from topological_planner import TopologicalPlanner
 from geometric_planner import GeometricPlanner
 from recovery_manager import RecoveryManager
 
-class OSMNavigation(object):
+class TopologicalNavigation(object):
 
-    """Navigation using OSM map"""
+    """Navigation using topology nodes map"""
 
     def __init__(self):
         # ROS params
@@ -134,6 +134,7 @@ class OSMNavigation(object):
         self._get_osm_path(goal)
         if self.topological_path is None:
             return
+        rospy.loginfo('Length of topological plan: ' + str(len(self.topological_path)))
         param_name = 'strict' if len(self.topological_path) == 1 else 'long_dist'
         self._bn_mode_pub.publish(String(data=param_name))
 

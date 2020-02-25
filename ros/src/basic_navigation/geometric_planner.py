@@ -50,7 +50,6 @@ class GeometricPlanner(object):
         straight_line_path = self.plan_straight_line_path(start, goal)
 
         straight_line_safe, collision_index = self.is_path_safe(straight_line_path)
-        print(collision_index)
 
         if straight_line_safe:
             return straight_line_path
@@ -98,7 +97,6 @@ class GeometricPlanner(object):
                 safe_wp_index += 1
                 if last_chance:
                     return None
-            print(path)
         return path
 
     def plan_straight_line_path(self, start, goal):

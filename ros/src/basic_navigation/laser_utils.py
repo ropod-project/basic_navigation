@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import tf
 import math
 import rospy
 import sensor_msgs.point_cloud2 as pc2
@@ -15,11 +16,12 @@ class LaserUtils(object):
 
     def __init__(self, **kwargs):
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
+        self.laser_frame = rospy.get_param('~laser_frame', 'load/laser')
+        self.footprint = rospy.get_param('~footprint', [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]])
 
         # class variables
+        self.tf_listener = tf.TransformListener()
         self.laser_proj = LaserProjection()
-        self.footprint = [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]] # TODO use rosparam
-        self.base_link_to_laser_offset = (0.2, 0.0) # TODO use tf?
         footprint_padding = kwargs.get('footprint_padding', 0.1)
         self.set_footprint_padding(footprint_padding)
         self.cloud = None
@@ -80,6 +82,7 @@ class LaserUtils(object):
             return
         self.padding = padding
         self.initialise_padded_footprint()
+        self.update_base_link_to_laser_offset()
 
     def initialise_padded_footprint(self):
         self.padded_footprint = []
@@ -89,6 +92,21 @@ class LaserUtils(object):
             x = p[0] + (sign_x * self.padding)
             y = p[1] + (sign_y * self.padding)
             self.padded_footprint.append(Point(x=x, y=y))
+
+    def update_base_link_to_laser_offset(self):
+        self.base_link_to_laser_offset = None
+        while self.base_link_to_laser_offset is None:
+            try:
+                trans, rot = self.tf_listener.lookupTransform(self.robot_frame,
+                                                              self.laser_frame,
+                                                              rospy.Time(0))
+                self.base_link_to_laser_offset = (trans[0], trans[1])
+            except Exception as e:
+                rospy.logerr(str(e))
+                rospy.logwarn('Retrying')
+                self.base_link_to_laser_offset = None
+                rospy.sleep(0.5)
+        rospy.loginfo('base_link to laser offset: ' + str(self.base_link_to_laser_offset))
 
     def is_inside_polygon(self, x, y, points):
         """checks if point (x,y) is inside the polygon created by points

@@ -56,6 +56,8 @@ class BasicNavigation(object):
         """
         Main event loop
         """
+        self.laser_utils.pub_debug_footprint()
+
         if self.plan is None:
             return
 

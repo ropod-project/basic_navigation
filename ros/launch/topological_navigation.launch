@@ -1,8 +1,11 @@
 <?xml version='1.0'?>
 <launch>
 
+    <!-- <arg name="robot_name" default="ropod_003" /> -->
     <!-- <arg name="laser_topic" default="/projected_scan"/> -->
+    <arg name="robot_name" default="ropod_sim" />
     <arg name="laser_topic" default="/load/scan"/>
+
     <arg name="cmd_vel_topic" default="/load/cmd_vel"/>
 
     <node pkg="basic_navigation" type="topological_navigation_node" name="topological_navigation"
@@ -15,16 +18,8 @@
         <remap from="~cmd_vel" to="$(arg cmd_vel_topic)" />
 
         <param name="network_file" value="$(find basic_navigation)/ros/config/brsu_network.yaml"/>
-        <param name="wp_goal_tolerance" type="double" value="1.5"/>
-        <param name="global_frame" type="string" value="map"/>
-        <param name="robot_frame" type="string" value="load/base_link"/>
-        <param name="footprint_padding" type="double" value="0.1"/>
-        <param name="dist_between_wp" type="double" value="0.5"/>
-
-        <!-- recovery params -->
-        <param name="recovery_wait_duration" type="double" value="2.0"/>
-        <param name="recovery_motion_duration" type="double" value="2.0"/>
-        <param name="recovery_vel" type="double" value="0.1"/>
+        <rosparam command="load"
+                  file="$(find basic_navigation)/ros/config/$(arg robot_name)/topological_navigation_params.yaml" />
     </node>
 
 </launch>

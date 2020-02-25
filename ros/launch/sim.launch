@@ -6,8 +6,8 @@
     <!-- MAP PARAMS -->
     <arg name="map_file" default="$(find ropod_navigation_test)/../occupancy_grids/brsu/brsu-c-floor0_osm/map.yaml" />
     <!-- offset between gazebo world origin and map origin -->
-    <arg name="init_x" default="-5.0" />
-    <arg name="init_y" default="5.5" />
+    <arg name="init_x" default="-1.0" />
+    <arg name="init_y" default="6.5" />
     <arg name="init_theta" default="0.0" />
     <arg name="robot_id" default="load" />
     <arg name="map_offset_x" default="59.95" />

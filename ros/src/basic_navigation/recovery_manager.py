@@ -39,6 +39,7 @@ class RecoveryManager(object):
             if global_navigation_obj.topological_path is not None:
                 param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
                 global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
+                print('Setting param dict to ', param_name)
         
     def recover(self, failure_type, **kwargs):
         rospy.loginfo('RECOVERING')
@@ -95,6 +96,8 @@ class RecoveryManager(object):
                 # preempt and replan
                 global_navigation_obj._cancel_bn_pub.publish(Empty())
                 global_navigation_obj.geometric_path = None
+        current_level = self.recovery_level_dict.get('sync')
+        self.recovery_level_dict['sync'] = current_level+1
 
     def _wait_recovery(self, **kwargs):
         rospy.loginfo('Recovery bahaviour: WAITING (duration: ' +
