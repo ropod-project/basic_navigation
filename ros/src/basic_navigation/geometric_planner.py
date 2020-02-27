@@ -21,7 +21,9 @@ class GeometricPlanner(object):
 
         # class variables
         self.tf_listener = tf_listener
-        self.laser_utils = LaserUtils(footprint_padding=footprint_padding, debug=False)
+        self.laser_utils = LaserUtils(footprint_padding=footprint_padding,
+                                      debug=True, only_use_half=True)
+        self.laser_utils.use_front_half = True
 
         # publishers
         if debug:
@@ -55,10 +57,17 @@ class GeometricPlanner(object):
         if straight_line_safe:
             return straight_line_path
 
-        rospy.logdebug('Straight was not safe. Failed at '+ str(collision_index))
+        rospy.loginfo('Straight was not safe. Failed at '+ str(collision_index))
 
         # then try sampling at collision point and try path via a valid sample
-        collision_pose = straight_line_path[collision_index]
+        collision_pose_raw = straight_line_path[collision_index]
+        transformed_collision = Utils.transform_pose(self.tf_listener, collision_pose_raw,
+                                                     self.global_frame, self.robot_frame)
+        transformed_collision = list(transformed_collision)
+        transformed_collision[0] += 1.0
+        collision_pose = Utils.transform_pose(self.tf_listener, transformed_collision,
+                                              self.robot_frame, self.global_frame)
+        print(collision_pose)
         theta = math.atan2(goal[1] - start[1], goal[0] - start[0])
         perpendicular_angle = Utils.get_perpendicular_angle(theta)
 
@@ -88,7 +97,7 @@ class GeometricPlanner(object):
             x = (self.connector_length * math.cos(theta)) + safe_wp[0]
             y = (self.connector_length * math.sin(theta)) + safe_wp[1]
             safe_wp_2 = [x, y, theta]
-            rospy.logdebug(safe_wp_index)
+            rospy.loginfo(safe_wp_index)
             first_half_path = self.plan_spline_path(start, safe_wp, mode='overtake')
             second_half_path = self.plan_spline_path(safe_wp_2, goal, mode='overtake')
             path = first_half_path
@@ -118,7 +127,10 @@ class GeometricPlanner(object):
 
     def plan_spline_path(self, start, goal, mode='overtake'):
         control_points = []
-        if mode == 'overtake' and abs(start[2] - goal[2]) < 0.5:
+        angle_diff_raw = abs(start[2]-goal[2])
+        angle_diff = angle_diff_raw - (math.pi*2) if angle_diff_raw > math.pi else angle_diff_raw
+        print(angle_diff)
+        if mode == 'overtake' and abs(angle_diff) < 0.5:
             # get 2 control points
             theta = goal[2]
             new_goal = [goal[0]-start[0], goal[1]-start[1], theta]

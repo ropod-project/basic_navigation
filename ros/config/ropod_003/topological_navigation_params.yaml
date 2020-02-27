@@ -7,7 +7,8 @@ plan_next_geometric_path_tolerance: 2
 
 # geometric planner related params
 laser_frame: '/rslidar_projected_front'
-footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
+# footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
+footprint: [[-0.1, 0.36], [1.3, 0.36], [1.3, -0.36], [-0.1, -0.36]] # with mobidik
 wp_goal_tolerance: 1.5
 footprint_padding: 0.1
 dist_between_wp: 0.5
