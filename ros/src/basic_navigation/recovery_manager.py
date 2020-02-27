@@ -22,7 +22,7 @@ class RecoveryManager(object):
         self.recovery_level_dict = {'obstacle': 1, 'plan': 1, 'sync': 1}
         self._level_to_func = {1:'_wait_recovery', 2:'_replan_recovery',
                               3:'_reconfigure_recovery', 4:'_move_away_recovery',
-                              5: '_failure'}
+                              5:'_modify_goal_recovery', 6: '_failure'}
         self._type_to_func = {'obstacle': 'recover_from_obstacle_failure',
                               'plan': 'recover_from_plan_failure',
                               'sync': 'recover_from_sync_failure'}
@@ -140,6 +140,25 @@ class RecoveryManager(object):
         global_navigation_obj.geometric_path = None
         param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
         global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
+
+    def _modify_goal_recovery(self, **kwargs):
+        rospy.loginfo('Recovery bahaviour: MODIFY GOAL')
+        global_navigation_obj = kwargs.get('global_navigation_obj')
+        curr_pos = global_navigation_obj.get_current_position_from_tf()
+        goal_pose = global_navigation_obj.topological_path[0]
+        straight_line_path = global_navigation_obj.geometric_planner.plan_straight_line_path(
+                                curr_pos, goal_pose[:3])
+        plan = None
+        while len(straight_line_path) > 0 and plan is None:
+            goal_pose = straight_line_path.pop(-1)
+            plan = global_navigation_obj.geometric_planner.plan(curr_pos, goal_pose)
+
+        if plan is None:
+            rospy.logerr('Modifying goal recovery failed.')
+            return
+
+        rospy.logwarn('Modifing current goal to make it achievable')
+        global_navigation_obj.topological_path[0][:2] = goal_pose
 
     def _failure(self, **kwargs):
         rospy.logerr('Reached highest level of recovery. ABORTING')

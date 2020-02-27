@@ -36,6 +36,7 @@ class GeometricPlanner(object):
 
         :start: tuple of 3 float
         :goal: tuple of 3 float
+        :try_spline_first: bool (used for junctions to create a curved turning path)
         :returns list of tuples (float, float, float)
 
         """
@@ -54,7 +55,7 @@ class GeometricPlanner(object):
         if straight_line_safe:
             return straight_line_path
 
-        rospy.loginfo('Straight was not safe. Failed at '+ str(collision_index))
+        rospy.logdebug('Straight was not safe. Failed at '+ str(collision_index))
 
         # then try sampling at collision point and try path via a valid sample
         collision_pose = straight_line_path[collision_index]
@@ -87,7 +88,7 @@ class GeometricPlanner(object):
             x = (self.connector_length * math.cos(theta)) + safe_wp[0]
             y = (self.connector_length * math.sin(theta)) + safe_wp[1]
             safe_wp_2 = [x, y, theta]
-            rospy.loginfo(safe_wp_index)
+            rospy.logdebug(safe_wp_index)
             first_half_path = self.plan_spline_path(start, safe_wp, mode='overtake')
             second_half_path = self.plan_spline_path(safe_wp_2, goal, mode='overtake')
             path = first_half_path
