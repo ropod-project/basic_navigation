@@ -22,6 +22,8 @@ class LaserUtils(object):
         # class variables
         self.tf_listener = tf.TransformListener()
         self.laser_proj = LaserProjection()
+        self.only_use_half = kwargs.get('only_use_half', False)
+        self.use_front_half = True
         footprint_padding = kwargs.get('footprint_padding', 0.1)
         self.set_footprint_padding(footprint_padding)
         self.cloud = None
@@ -50,6 +52,9 @@ class LaserUtils(object):
             self.pub_debug_footprint(footprint)
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
         for p in points:
+            if self.only_use_half and ((self.use_front_half and p[0] <= 0) or\
+                                       (not self.use_front_half and p[0] >= 0)):
+                continue
             if self.is_inside_polygon(p[0], p[1], footprint):
                 return False
         return True

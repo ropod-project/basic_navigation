@@ -179,7 +179,7 @@ class GeometricPlanner(object):
         return safe_samples
 
     def is_path_safe(self, path):
-        for i, wp in enumerate(path):
+        for i, wp in enumerate(path[1:]):
             transformed_wp = Utils.transform_pose(self.tf_listener, wp,
                                                   self.global_frame, self.robot_frame)
             safe = self.laser_utils.is_safe_from_colliding_at(*transformed_wp)

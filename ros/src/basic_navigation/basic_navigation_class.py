@@ -28,7 +28,7 @@ class BasicNavigation(object):
         self.current_vel = 0.0
 
         self._tf_listener = tf.TransformListener()
-        self.laser_utils = LaserUtils(debug=False)
+        self.laser_utils = LaserUtils(debug=False, only_use_half=True)
 
         self.default_param_dict_name = rospy.get_param('~default_param_dict_name', 'strict')
         param_dict = rospy.get_param('~' + self.default_param_dict_name)
@@ -127,6 +127,7 @@ class BasicNavigation(object):
                 pose[0] -= self.forward_safety_dist
             else:
                 pose[0] += self.forward_safety_dist
+        self.laser_utils.use_front_half = not self.moving_backward
         collision_index = self.laser_utils.get_collision_index(future_poses_with_safety)
 
         if collision_index == 0:
@@ -226,9 +227,8 @@ class BasicNavigation(object):
         path_msg.header.stamp = rospy.Time.now()
         start_pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame, *curr_pos)
         goal_pose = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame, *goal)
-        self.plan = [start_pose, goal_pose]
-        path_msg.poses = self.plan
-
+        path_msg.poses = [start_pose, goal_pose]
+        self.plan = [goal_pose]
         self._path_pub.publish(path_msg)
 
     def _reset_state(self):
