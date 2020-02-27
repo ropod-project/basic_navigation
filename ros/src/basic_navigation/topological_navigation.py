@@ -6,7 +6,7 @@ import math
 import rospy
 import traceback
 
-from std_msgs.msg import String, Empty
+from std_msgs.msg import String, Empty, Bool
 from geometry_msgs.msg import PoseStamped, PointStamped, Point
 from nav_msgs.msg import Path
 from basic_navigation.msg import BasicNavigationFeedback as Feedback
@@ -40,7 +40,7 @@ class TopologicalNavigation(object):
         self.replan_current_geometric_path = False
 
         # subscribers
-        clicked_point_sub = rospy.Subscriber('/clicked_point', PointStamped, self.goal_cb)
+        goal_sub = rospy.Subscriber('~goal', PoseStamped, self.goal_cb)
         cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
         feedback_sub = rospy.Subscriber('~bn_feedback', Feedback, self.feedback_cb)
 
@@ -49,6 +49,7 @@ class TopologicalNavigation(object):
         self._cancel_bn_pub = rospy.Publisher('~cancel_bn', Empty, queue_size=1)
         self._bn_path_pub = rospy.Publisher('~bn_goal_path', Path, queue_size=1)
         self._bn_mode_pub = rospy.Publisher('~bn_mode', String, queue_size=1)
+        self._result_pub = rospy.Publisher('~result', Bool, queue_size=1)
 
         rospy.loginfo('Initialised')
 
@@ -62,6 +63,7 @@ class TopologicalNavigation(object):
         if self.geometric_path is None:
             if len(self.topological_path) == 0:
                 print('\n\nREACHED GOAL (more or less)\n\n')
+                self._result_pub.publish(Bool(data=True))
                 self.topological_path = None
                 self._reset_state()
             else:
@@ -99,6 +101,8 @@ class TopologicalNavigation(object):
         if msg.status == Feedback.SUCCESS:
             if len(self.topological_path) == 0:
                 print('\n\nREACHED GOAL\n\n')
+                self._result_pub.publish(Bool(data=True))
+                self.plan_next_geometric_path = False
                 self.topological_path = None
                 self._reset_state()
             else:
@@ -131,7 +135,7 @@ class TopologicalNavigation(object):
         if self.topological_path is not None:
             rospy.logwarn('Preempting ongoing path. User requested another goal')
         self._reset_state()
-        goal = (msg.point.x, msg.point.y)
+        goal = Utils.get_x_y_theta_from_pose(msg.pose)
         rospy.loginfo('Received new goal')
         rospy.loginfo(goal)
         self._get_osm_path(goal)
@@ -178,7 +182,7 @@ class TopologicalNavigation(object):
         Generates orientation for point plan to create Path msg 
         Publishes Path msg for visualisation
 
-        :goal: tuple of 2 float
+        :goal: tuple of 3 float
         :returns: None
 
         """
@@ -203,6 +207,8 @@ class TopologicalNavigation(object):
         for i in range(len(plan)):
             if i < len(plan)-1:
                 theta = math.atan2(plan[i+1].y - plan[i].y, plan[i+1].x - plan[i].x)
+            else:
+                theta = goal[2]
             pose = [plan[i].x, plan[i].y, theta]
             pose_stamped = Utils.get_pose_stamped_from_frame_x_y_theta(self.global_frame, *pose)
             pose.append(plan[i].area_type)

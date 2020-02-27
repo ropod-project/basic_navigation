@@ -7,7 +7,7 @@
     <arg name="laser_topic" default="/load/scan"/>
     
     <arg name="odom_topic" default="/load/odom"/>
-    <arg name="goal_topic" default="/move_base_simple/goal"/>
+    <arg name="goal_topic" default="/move_base_simple/basic_goal"/>
     <arg name="localisation_topic" default="/amcl_pose"/>
     <arg name="cmd_vel_topic" default="/load/cmd_vel"/>
 
