@@ -52,10 +52,11 @@ class LaserUtils(object):
             self.pub_debug_footprint(footprint)
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
         for p in points:
-            if self.only_use_half and ((self.use_front_half and p[0] <= 0) or\
-                                       (not self.use_front_half and p[0] >= 0)):
+            transformed_p = self.matrix.dot([p[0], p[1], 0.0, 0.0])
+            if self.only_use_half and ((self.use_front_half and transformed_p[0] <= 0) or\
+                                       (not self.use_front_half and transformed_p[0] >= 0)):
                 continue
-            if self.is_inside_polygon(p[0], p[1], footprint):
+            if self.is_inside_polygon(transformed_p[0], transformed_p[1], footprint):
                 return False
         return True
 
@@ -106,6 +107,7 @@ class LaserUtils(object):
                                                               self.laser_frame,
                                                               rospy.Time(0))
                 self.base_link_to_laser_offset = (trans[0], trans[1])
+                self.matrix = self.tf_listener.fromTranslationRotation(trans, rot)
             except Exception as e:
                 rospy.logerr(str(e))
                 rospy.logwarn('Retrying')
@@ -125,9 +127,7 @@ class LaserUtils(object):
         xPoints = [p.x for p in points]
         yPoints = [p.y for p in points]
 
-        return Utils.ray_tracing_algorithm(xPoints, yPoints,
-                                           x+self.base_link_to_laser_offset[0],
-                                           y+self.base_link_to_laser_offset[1])
+        return Utils.ray_tracing_algorithm(xPoints, yPoints, x, y)
 
     def get_recovery_direction(self):
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))

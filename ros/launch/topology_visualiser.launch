@@ -13,5 +13,5 @@
     <node name="map_server" pkg="map_server" type="map_server" output="screen" args="$(arg map_file)" />
 
     <!-- rviz for visualisation -->
-    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find basic_navigation)/ros/config/topology_visualiser.rviz" />
+    <node pkg="rviz" type="rviz" name="topology_rviz" args="-d $(find basic_navigation)/ros/config/topology_visualiser.rviz" />
 </launch>

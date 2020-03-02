@@ -22,8 +22,8 @@ nodes:
 - area_name: BRSU_area
   area_type: area
   id: 5
-  x: -5.18
-  y: 2.36
+  x: -4.85
+  y: 2.03
 - area_name: BRSU_area
   area_type: area
   id: 6
