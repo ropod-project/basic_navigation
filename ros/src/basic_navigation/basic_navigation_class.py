@@ -275,11 +275,9 @@ class BasicNavigation(object):
         mode = msg.data
         if mode == self.current_mode:
             return
-        if mode in ['long_dist', 'strict']:
+        if mode in ['long_dist', 'strict', 'cart']:
             param_dict = rospy.get_param('~' + mode)
             self.update_params(param_dict, mode)
-        elif mode == 'cart':
-            pass # TODO
         else:
             print('unknown mode')
             param_dict = rospy.get_param('~' + self.default_param_dict_name)

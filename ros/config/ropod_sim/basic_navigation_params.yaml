@@ -77,4 +77,3 @@ cart:
     min_linear_vel: 0.1
     max_linear_acc: 0.5
     future_pos_lookahead_time: 3.0
-

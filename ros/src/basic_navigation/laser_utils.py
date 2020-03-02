@@ -118,8 +118,8 @@ class LaserUtils(object):
     def is_inside_polygon(self, x, y, points):
         """checks if point (x,y) is inside the polygon created by points
 
-        :x: int/float
-        :y: int/float
+        :x: float
+        :y: float
         :points: list of geometry_msgs.Point
         :returns: bool
 
