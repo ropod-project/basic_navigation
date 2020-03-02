@@ -133,3 +133,20 @@ class LaserUtils(object):
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
         closest_point = min(points, key=lambda point: Utils.get_distance(point[0], point[1]))
         return math.atan2(closest_point[1], closest_point[0])
+
+    def get_footprint_edge_to_base_link_dist(self):
+        """
+        return distace between front center point of footprint to base_link
+        ASSUMPTION: footprint is defined in base_link frame
+        
+        :returns: float
+
+        """
+        front_footprint_points = [p for p in self.padded_footprint if p.x > 0]
+        mid_point = Point()
+        for p in front_footprint_points:
+            mid_point.x += p.x
+            mid_point.y += p.y
+        mid_point.x /= len(front_footprint_points)
+        mid_point.y /= len(front_footprint_points)
+        return Utils.get_distance(mid_point.x, mid_point.y)

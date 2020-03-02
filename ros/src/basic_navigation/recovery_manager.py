@@ -36,10 +36,7 @@ class RecoveryManager(object):
             self.recovery_level_dict = {'obstacle': 1, 'plan': 1, 'sync': 1}
             global_navigation_obj.geometric_planner.laser_utils.set_footprint_padding(self.default_footprint_padding)
             self.move_away_recovery_counter = 0
-            if global_navigation_obj.topological_path is not None:
-                param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
-                global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
-                print('Setting param dict to ', param_name)
+            global_navigation_obj.choose_bn_mode()
         
     def recover(self, failure_type, **kwargs):
         rospy.loginfo('RECOVERING')
@@ -75,11 +72,15 @@ class RecoveryManager(object):
         msg_wp = Utils.get_x_y_theta_from_pose(feedback_msg.reached_wp)
         geometric_path_wp = Utils.get_x_y_theta_from_pose(global_navigation_obj.geometric_path[0].pose)
         dist = Utils.get_distance_between_points(msg_wp[:2], geometric_path_wp[:2])
+        # for i, wp in enumerate(global_navigation_obj.geometric_path):
+        #     pose = Utils.get_x_y_theta_from_pose(wp.pose)
+        #     print(pose)
         if dist > global_navigation_obj.geometric_wp_goal_tolerance:
             print('Robot has reached a wp that is different from path')
             # preempt and replan
             global_navigation_obj._cancel_bn_pub.publish(Empty())
             global_navigation_obj.geometric_path = None
+            global_navigation_obj.choose_bn_mode()
         else:
             global_navigation_obj.geometric_path.pop(0)
             msg_remaining_path_length = feedback_msg.remaining_path_length
@@ -96,6 +97,7 @@ class RecoveryManager(object):
                 # preempt and replan
                 global_navigation_obj._cancel_bn_pub.publish(Empty())
                 global_navigation_obj.geometric_path = None
+                global_navigation_obj.choose_bn_mode()
         current_level = self.recovery_level_dict.get('sync')
         self.recovery_level_dict['sync'] = current_level+1
 
@@ -115,6 +117,7 @@ class RecoveryManager(object):
         rospy.loginfo('Recovery bahaviour: REPLAN')
         global_navigation_obj = kwargs.get('global_navigation_obj')
         global_navigation_obj.geometric_path = None
+        global_navigation_obj.choose_bn_mode()
 
     def _reconfigure_recovery(self, **kwargs):
         rospy.loginfo('Recovery bahaviour: RECONFIGURE')
@@ -138,8 +141,7 @@ class RecoveryManager(object):
         global_navigation_obj = kwargs.get('global_navigation_obj')
         global_navigation_obj.geometric_planner.laser_utils.set_footprint_padding(self.default_footprint_padding)
         global_navigation_obj.geometric_path = None
-        param_name = 'strict' if len(global_navigation_obj.topological_path) == 1 else 'long_dist'
-        global_navigation_obj._bn_mode_pub.publish(String(data=param_name))
+        global_navigation_obj.choose_bn_mode()
 
     def _modify_goal_recovery(self, **kwargs):
         rospy.loginfo('Recovery bahaviour: MODIFY GOAL')

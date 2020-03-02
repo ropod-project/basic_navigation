@@ -26,6 +26,7 @@ class BasicNavigation(object):
         self.robot_frame = rospy.get_param('~robot_frame', 'load/base_link')
         self.retry_attempts = 0
         self.current_vel = 0.0
+        self.current_mode = None
 
         self._tf_listener = tf.TransformListener()
         self.laser_utils = LaserUtils(debug=False, only_use_half=True)
@@ -242,6 +243,7 @@ class BasicNavigation(object):
 
     def update_params(self, param_dict, param_name=''):
         rospy.loginfo('Updating params to ' + param_name)
+        self.current_mode = param_name
         self.allow_backward_motion = param_dict.get('allow_backward_motion', False)
         footprint_padding = param_dict.get('footprint_padding', 0.1)
         self.laser_utils.set_footprint_padding(footprint_padding)
@@ -271,6 +273,8 @@ class BasicNavigation(object):
 
     def switch_mode_cb(self, msg):
         mode = msg.data
+        if mode == self.current_mode:
+            return
         if mode in ['long_dist', 'strict']:
             param_dict = rospy.get_param('~' + mode)
             self.update_params(param_dict, mode)

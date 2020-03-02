@@ -14,8 +14,7 @@
     <arg name="topological_goal_topic" default="/move_base_simple/goal"/>
     <arg name="basic_goal_topic" default="/move_base_simple/basic_goal"/>
 
-    <node pkg="basic_navigation" type="topological_navigation_node" name="topological_navigation"
-          respawn="false" output="screen">
+    <node pkg="basic_navigation" type="topological_navigation_node" name="topological_navigation" output="screen">
         <remap from="~bn_feedback" to="/basic_navigation/feedback" />
         <remap from="~bn_mode" to="/basic_navigation/switch_mode" />
         <remap from="~cancel_bn" to="/basic_navigation/cancel" />

@@ -3,7 +3,7 @@ robot_frame: 'load/base_link'
 control_rate: 2.0
 geometric_wp_goal_tolerance: 0.5
 topological_wp_goal_tolerance: 1.0
-plan_next_geometric_path_tolerance: 2
+plan_next_geometric_path_tolerance: 3
 
 # geometric planner related params
 laser_frame: 'load/front_laser_link'

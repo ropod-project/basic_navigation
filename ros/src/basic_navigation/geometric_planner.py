@@ -22,7 +22,7 @@ class GeometricPlanner(object):
         # class variables
         self.tf_listener = tf_listener
         self.laser_utils = LaserUtils(footprint_padding=footprint_padding,
-                                      debug=True, only_use_half=True)
+                                      debug=False, only_use_half=True)
         self.laser_utils.use_front_half = True
 
         # publishers
@@ -44,7 +44,7 @@ class GeometricPlanner(object):
         """
         if try_spline_first and Utils.get_distance_between_points(start[:2], goal[:2]) < 4.0 and abs(start[2]-goal[2]) > 0.2:
             rospy.loginfo('Trying spline junction first')
-            path = self.plan_spline_path(start, goal, mode='junction')
+            path = self.plan_spline_path(start, goal, mode='overtake')
             # self.path_debug_pub.publish(Utils.get_path_msg_from_poses(path, self.global_frame))
             if self.is_path_safe(path)[0]:
                 return path
@@ -64,10 +64,9 @@ class GeometricPlanner(object):
         transformed_collision = Utils.transform_pose(self.tf_listener, collision_pose_raw,
                                                      self.global_frame, self.robot_frame)
         transformed_collision = list(transformed_collision)
-        transformed_collision[0] += 1.0
+        transformed_collision[0] += self.laser_utils.get_footprint_edge_to_base_link_dist()
         collision_pose = Utils.transform_pose(self.tf_listener, transformed_collision,
                                               self.robot_frame, self.global_frame)
-        print(collision_pose)
         theta = math.atan2(goal[1] - start[1], goal[0] - start[0])
         perpendicular_angle = Utils.get_perpendicular_angle(theta)
 
@@ -97,7 +96,7 @@ class GeometricPlanner(object):
             x = (self.connector_length * math.cos(theta)) + safe_wp[0]
             y = (self.connector_length * math.sin(theta)) + safe_wp[1]
             safe_wp_2 = [x, y, theta]
-            rospy.loginfo(safe_wp_index)
+            rospy.logdebug(safe_wp_index)
             first_half_path = self.plan_spline_path(start, safe_wp, mode='overtake')
             second_half_path = self.plan_spline_path(safe_wp_2, goal, mode='overtake')
             path = first_half_path
@@ -129,7 +128,6 @@ class GeometricPlanner(object):
         control_points = []
         angle_diff_raw = abs(start[2]-goal[2])
         angle_diff = angle_diff_raw - (math.pi*2) if angle_diff_raw > math.pi else angle_diff_raw
-        print(angle_diff)
         if mode == 'overtake' and abs(angle_diff) < 0.5:
             # get 2 control points
             theta = goal[2]

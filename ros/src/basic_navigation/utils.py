@@ -398,3 +398,27 @@ class Utils(object):
         # add the control to the interactive marker
         int_marker.controls.append(rotate_control2);
         return int_marker
+
+    @staticmethod
+    def get_path_length(poses):
+        """Calculate the length of path defined by poses
+
+        :poses: list of tuples (float, float [, float, ..])
+        :returns: float
+
+        """
+        dist = 0.0
+        for i in range(len(poses)-1):
+            dist += Utils.get_distance_between_points(poses[i][:2], poses[i+1][:2])
+        return dist
+
+    @staticmethod
+    def get_path_length_pose_stamped(pose_stamped_list):
+        """Calculate the length of path defined by pose stamped msgs
+
+        :pose_stamped_list list of geometry_msgs.PoseStamped
+        :returns: float
+
+        """
+        poses = [Utils.get_x_y_theta_from_pose(p.pose) for p in pose_stamped_list]
+        return Utils.get_path_length(poses)
