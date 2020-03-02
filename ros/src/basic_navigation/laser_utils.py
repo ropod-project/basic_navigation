@@ -90,6 +90,9 @@ class LaserUtils(object):
         self.initialise_padded_footprint()
         self.update_base_link_to_laser_offset()
 
+    def set_footprint(self, footprint):
+        self.footprint = footprint
+
     def initialise_padded_footprint(self):
         self.padded_footprint = []
         for p in self.footprint:

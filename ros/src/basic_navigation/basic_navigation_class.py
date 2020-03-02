@@ -245,6 +245,8 @@ class BasicNavigation(object):
         rospy.loginfo('Updating params to ' + param_name)
         self.current_mode = param_name
         self.allow_backward_motion = param_dict.get('allow_backward_motion', False)
+        footprint = param_dict.get('footprint', [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]])
+        self.laser_utils.set_footprint(footprint)
         footprint_padding = param_dict.get('footprint_padding', 0.1)
         self.laser_utils.set_footprint_padding(footprint_padding)
 

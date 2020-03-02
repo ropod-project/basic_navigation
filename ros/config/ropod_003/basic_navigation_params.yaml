@@ -2,10 +2,9 @@ global_frame: 'map'
 robot_frame: 'load/base_link'
 control_rate: 5.0
 laser_frame: '/rslidar_projected_front'
-# footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
-footprint: [[-0.1, 0.36], [1.3, 0.36], [1.3, -0.36], [-0.1, -0.36]] # with mobidik
 
 long_dist:
+    footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
     allow_backward_motion: False
     # tolerances
     heading_tolerance: 0.5
@@ -31,6 +30,7 @@ long_dist:
     future_pos_lookahead_time: 3.0
 
 strict:
+    footprint: [[-0.33, 0.33], [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]]
     allow_backward_motion: True
     # tolerances
     heading_tolerance: 0.5
@@ -55,6 +55,7 @@ strict:
     future_pos_lookahead_time: 3.0
 
 cart:
+    footprint: [[-0.1, 0.36], [1.3, 0.36], [1.3, -0.36], [-0.1, -0.36]] # with mobidik
     allow_backward_motion: False
     # tolerances
     heading_tolerance: 0.5

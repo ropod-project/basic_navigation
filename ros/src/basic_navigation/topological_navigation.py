@@ -46,6 +46,7 @@ class TopologicalNavigation(object):
         goal_sub = rospy.Subscriber('~goal', PoseStamped, self.goal_cb)
         cancel_goal_sub = rospy.Subscriber('~cancel', Empty, self.cancel_current_goal)
         feedback_sub = rospy.Subscriber('~bn_feedback', Feedback, self.feedback_cb)
+        cart_attached_sub = rospy.Subscriber('~cart_attached', Bool, self.cart_attached_cb)
 
         # publishers
         self._path_pub = rospy.Publisher('~topological_path', Path, queue_size=1)
@@ -158,6 +159,12 @@ class TopologicalNavigation(object):
             return
         rospy.loginfo('Length of topological plan: ' + str(len(self.topological_path)))
         self.choose_bn_mode()
+
+    def cart_attached_cb(self, msg):
+        self.is_cart_attached = msg.data
+        print('msg', msg)
+        param_name = 'cart_attached_footprint' if self.is_cart_attached else 'footprint'
+        self.geometric_planner.laser_utils.set_footprint(rospy.get_param('~' + param_name))
 
     def cancel_current_goal(self, msg):
         """Cancel current goal by sending a cancel signal to basic navigation

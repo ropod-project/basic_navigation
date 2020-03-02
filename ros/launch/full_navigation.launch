@@ -13,6 +13,7 @@
 
     <arg name="topological_goal_topic" default="/move_base_simple/goal"/>
     <arg name="basic_goal_topic" default="/move_base_simple/basic_goal"/>
+    <arg name="cart_attached_topic" default="/route_navigation/set_load_attached"/>
 
     <node pkg="basic_navigation" type="topological_navigation_node" name="topological_navigation" output="screen">
         <remap from="~bn_feedback" to="/basic_navigation/feedback" />
@@ -22,6 +23,7 @@
         <remap from="~laser" to="$(arg laser_topic)" />
         <remap from="~cmd_vel" to="$(arg cmd_vel_topic)" />
         <remap from="~goal" to="$(arg topological_goal_topic)"/>
+        <remap from="~cart_attached" to="$(arg cart_attached_topic)"/>
 
         <param name="network_file" value="$(find basic_navigation)/ros/config/$(arg network_file_name).yaml"/>
         <rosparam command="load"
