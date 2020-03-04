@@ -70,6 +70,11 @@ class TopologicalNavigation(object):
             return
 
         if self.geometric_path is None:
+            if len(self.topological_path) == 0:
+                print('\n\nREACHED GOAL (more or less)\n\n')
+                self._result_pub.publish(Bool(data=True))
+                self._reset_state()
+                return
             self.geometric_path = self._get_geometric_path(goal_pose=self.topological_path[0])
             return
 

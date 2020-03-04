@@ -3,8 +3,8 @@
 
     <!-- <arg name="robot_name" default="ropod_003" /> -->
     <!-- <arg name="laser_topic" default="/projected_scan"/> -->
-    <arg name="robot_name" default="ropod_sim" />
-    <arg name="laser_topic" default="/load/scan"/>
+    <arg name="robot_name" default="ropod_005" />
+    <arg name="laser_topic" default="/projected_scan"/>
     <arg name="network_file_name" default="brsu_network"/>
 
     <arg name="odom_topic" default="/load/odom"/>
