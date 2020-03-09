@@ -52,7 +52,7 @@ class LaserUtils(object):
             self.pub_debug_footprint(footprint)
         points = pc2.read_points(self.cloud, skip_nans=True, field_names=("x", "y"))
         for p in points:
-            transformed_p = self.matrix.dot([p[0], p[1], 0.0, 0.0])
+            transformed_p = self.matrix.dot([p[0], p[1], 0.0, 1.0])
             if self.only_use_half and ((self.use_front_half and transformed_p[0] <= 0) or\
                                        (not self.use_front_half and transformed_p[0] >= 0)):
                 continue

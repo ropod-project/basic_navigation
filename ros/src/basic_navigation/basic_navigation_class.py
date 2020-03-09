@@ -109,6 +109,17 @@ class BasicNavigation(object):
     def _rotate_in_place(self, theta_error=1.0):
         theta_vel_raw = theta_error * self.p_theta_in_place
         theta_vel = Utils.clip(theta_vel_raw, self.max_theta_vel, self.min_theta_vel)
+
+        num_of_points = 10
+        future_poses = Utils.get_future_poses(0.0, theta_vel, num_of_points,
+                                              self.future_pos_lookahead_time)
+        collision_index = self.laser_utils.get_collision_index(future_poses)
+        if collision_index == 0:
+            rospy.logerr('Obstacle while rotating. Current plan failed.')
+            self._feedback_pub.publish(Feedback(status=Feedback.FAILURE_OBSTACLES))
+            self._reset_state()
+            return
+
         self._cmd_vel_pub.publish(Utils.get_twist(x=0.0, y=0.0, theta=theta_vel))
 
     def _move_forward(self, pos_error=1.0, theta_error=1.0):
